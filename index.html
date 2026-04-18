@@ -65,6 +65,9 @@
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
             if (key in keys) keys[key] = true;
+            if (e.code === 'Space' && gameState === 'playing' && selectedItem) {
+                useItem();
+            }
         });
 
         document.addEventListener('keyup', (e) => {
@@ -188,6 +191,12 @@
                 gameState = 'gameover';
                 gameResult = 'win';
             }
+
+            // Update item cooldown
+            if (selectedItem && selectedItem.cooldown > 0) {
+                selectedItem.cooldown -= dt * 1000;
+                if (selectedItem.cooldown < 0) selectedItem.cooldown = 0;
+            }
         }
 
         function drawPlayer() {
@@ -206,7 +215,21 @@
             const distToPlayer = Math.hypot(player.x - ghost.x, player.y - ghost.y);
             const angleToPlayer = Math.atan2(player.y - ghost.y, player.x - ghost.x);
 
-            const canSeePlayer = distToPlayer < ghost.visionRange &&
+            // Check if in smoke
+            let inSmoke = false;
+            for (const smoke of smokeBombs) {
+                const age = Date.now() - smoke.startTime;
+                if (age < smoke.duration && Math.hypot(player.x - smoke.x, player.y - smoke.y) < smoke.radius) {
+                    inSmoke = true;
+                    break;
+                }
+            }
+
+            // Check invisibility
+            const isInvisible = selectedItem && selectedItem.active && selectedItem.name === 'Invisibility';
+
+            // Modify canSeePlayer
+            const canSeePlayer = !isInvisible && !inSmoke && distToPlayer < ghost.visionRange &&
                 Math.abs(normalizeAngle(angleToPlayer - ghost.angle)) < ghost.visionAngle / 2 &&
                 hasLineOfSight(ghost.x, ghost.y, player.x, player.y);
 
@@ -323,6 +346,43 @@
             ctx.fill();
         }
 
+        function drawSmokeBombs() {
+            const now = Date.now();
+            for (let i = smokeBombs.length - 1; i >= 0; i--) {
+                const smoke = smokeBombs[i];
+                const age = now - smoke.startTime;
+                if (age > smoke.duration) {
+                    smokeBombs.splice(i, 1);
+                    continue;
+                }
+                const alpha = 1 - age / smoke.duration;
+                ctx.beginPath();
+                ctx.arc(smoke.x, smoke.y, smoke.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(100, 100, 100, ${alpha * 0.5})`;
+                ctx.fill();
+            }
+        }
+
+        function drawItemUI() {
+            if (!selectedItem) return;
+
+            ctx.textAlign = 'right';
+            ctx.font = '16px Arial';
+            ctx.fillStyle = '#ffffff';
+
+            const name = selectedItem.name;
+            const ready = selectedItem.cooldown <= 0 && !selectedItem.active;
+            const active = selectedItem.active;
+
+            ctx.fillStyle = active ? '#00ff00' : ready ? '#ffffff' : '#888888';
+            ctx.fillText(`${name}: ${active ? 'ACTIVE' : ready ? 'READY' : 'Cooldown'}`, canvas.width - 30, 35);
+
+            if (!ready && !active) {
+                ctx.fillStyle = '#888888';
+                ctx.fillText(`${(selectedItem.cooldown / 1000).toFixed(1)}s`, canvas.width - 30, 55);
+            }
+        }
+
         const ITEMS = [
             { name: 'Speed Boost', desc: '2x speed for 3 seconds', color: '#00aaff' },
             { name: 'Invisibility', desc: 'Ghost cant track you for 3 seconds', color: '#aa00ff' },
@@ -345,6 +405,41 @@
 
         let selectedItem = null;
         let hoveredItemIndex = -1;
+        let smokeBombs = [];
+
+        function useItem() {
+            if (!selectedItem || selectedItem.cooldown > 0 || selectedItem.active) return;
+
+            selectedItem.active = true;
+            selectedItem.cooldown = getItemCooldown(selectedItem.name);
+
+            setTimeout(() => {
+                selectedItem.active = false;
+            }, 3000);
+
+            if (selectedItem.name === 'Smoke Bomb') {
+                triggerSmokeBomb();
+            }
+        }
+
+        function getItemCooldown(itemName) {
+            switch(itemName) {
+                case 'Speed Boost': return 30000;
+                case 'Invisibility': return 45000;
+                case 'Smoke Bomb': return 60000;
+                default: return 30000;
+            }
+        }
+
+        function triggerSmokeBomb() {
+            smokeBombs.push({
+                x: player.x,
+                y: player.y,
+                radius: 80,
+                duration: 3000,
+                startTime: Date.now()
+            });
+        }
 
         function drawItemSelect() {
             ctx.fillStyle = COLORS.background;
@@ -447,6 +542,8 @@
                 drawMap();
                 drawGhost();
                 drawPlayer();
+                drawSmokeBombs();
+                drawItemUI();
             }
             requestAnimationFrame(gameLoop);
         }
@@ -466,6 +563,7 @@
                 ITEM_CLICK_AREAS.forEach((area, i) => {
                     if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
                         selectedItem = { ...ITEMS[i], cooldown: 0 };
+                        smokeBombs = [];
                         generateMap();
                         gameState = 'playing';
                     }
