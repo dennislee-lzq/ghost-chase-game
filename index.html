@@ -28,6 +28,7 @@
 
         // Game state
         let gameState = 'menu'; // menu, itemSelect, playing, gameover
+        let lastTime = 0;
 
         // Colors from design
         const COLORS = {
@@ -40,6 +41,20 @@
             exitActive: '#00ff00',
             ghostVision: 'rgba(255, 100, 100, 0.2)'
         };
+
+        // Player object and input tracking
+        let player = { x: 60, y: canvas.height - 60, radius: 12, speed: 150 };
+        const keys = { w: false, a: false, s: false, d: false };
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in keys) keys[key] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in keys) keys[key] = false;
+        });
 
         // Map generation
         let walls = [];
@@ -108,6 +123,46 @@
                 }
             }
             return false;
+        }
+
+        function updatePlayer(dt) {
+            let dx = 0, dy = 0;
+            if (keys.w) dy -= 1;
+            if (keys.s) dy += 1;
+            if (keys.a) dx -= 1;
+            if (keys.d) dx += 1;
+
+            // Normalize diagonal movement
+            if (dx !== 0 && dy !== 0) {
+                dx *= 0.707;
+                dy *= 0.707;
+            }
+
+            const speed = selectedItem && selectedItem.active && selectedItem.name === 'Speed Boost'
+                ? player.speed * 2 : player.speed;
+
+            let newX = player.x + dx * speed * dt;
+            let newY = player.y + dy * speed * dt;
+
+            // Wall collision
+            if (!isCollidingWithWalls(newX, player.y, player.radius)) {
+                player.x = newX;
+            }
+            if (!isCollidingWithWalls(player.x, newY, player.radius)) {
+                player.y = newY;
+            }
+        }
+
+        function drawPlayer() {
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = COLORS.player;
+            ctx.fill();
+            // Glow effect
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = COLORS.player;
+            ctx.fill();
+            ctx.shadowBlur = 0;
         }
 
         const ITEMS = [
@@ -214,16 +269,24 @@
         }
 
         // Main game loop
-        function gameLoop() {
+        function gameLoop(timestamp) {
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
             if (gameState === 'menu') {
                 drawMenu();
             } else if (gameState === 'itemSelect') {
                 drawItemSelect();
             } else if (gameState === 'playing') {
+                updatePlayer(dt);
                 drawMap();
+                drawPlayer();
             }
             requestAnimationFrame(gameLoop);
         }
+
+        // Initialize gameLoop
+        gameLoop(0);
 
         // Click handler for starting game
         canvas.addEventListener('click', (e) => {
@@ -263,8 +326,6 @@
         canvas.addEventListener('mouseleave', () => {
             hoveredItemIndex = -1;
         });
-
-        gameLoop();
     </script>
 </body>
 </html>
