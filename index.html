@@ -59,7 +59,7 @@
         };
 
         // Player object and input tracking
-        let player = { x: 60, y: canvas.height - 60, radius: 12, speed: 150 };
+        let player = { x: 60, y: canvas.height - 60, radius: 12, speed: 150, flashTime: 0 };
         const keys = { w: false, a: false, s: false, d: false };
 
         document.addEventListener('keydown', (e) => {
@@ -180,6 +180,7 @@
                 if (circleCollision(player.x, player.y, player.radius, items[i].x, items[i].y, 8)) {
                     items.splice(i, 1);
                     collectedCount++;
+                    player.flashTime = Date.now();
                     if (collectedCount >= ITEMS_TO_WIN) {
                         exit.active = true;
                     }
@@ -209,6 +210,13 @@
             ctx.shadowColor = COLORS.player;
             ctx.fill();
             ctx.shadowBlur = 0;
+            // Flash effect when collecting
+            if (player.flashTime && Date.now() - player.flashTime < 200) {
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius + 10, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+                ctx.fill();
+            }
         }
 
         function updateGhost(dt) {
@@ -383,6 +391,13 @@
             }
         }
 
+        function drawInstructions() {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('WASD: Move | SPACE: Use Item', 30, canvas.height - 20);
+        }
+
         function drawGameOver() {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -541,11 +556,22 @@
                 ctx.shadowBlur = 0;
             });
 
-            // Exit
-            ctx.beginPath();
-            ctx.arc(exit.x, exit.y, 20, 0, Math.PI * 2);
-            ctx.fillStyle = exit.active ? COLORS.exitActive : COLORS.exitInactive;
-            ctx.fill();
+            // Exit - animated glow when active
+            if (exit.active) {
+                const pulse = 1 + Math.sin(Date.now() / 300) * 0.2;
+                ctx.beginPath();
+                ctx.arc(exit.x, exit.y, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.exitActive;
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = COLORS.exitActive;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.beginPath();
+                ctx.arc(exit.x, exit.y, 20, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.exitInactive;
+                ctx.fill();
+            }
         }
 
         // Main game loop
@@ -565,6 +591,7 @@
                 drawPlayer();
                 drawSmokeBombs();
                 drawItemUI();
+                drawInstructions();
             } else if (gameState === 'gameover') {
                 drawMap();
                 drawPlayer();
