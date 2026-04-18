@@ -41,6 +41,47 @@
             ghostVision: 'rgba(255, 100, 100, 0.2)'
         };
 
+        const ITEMS = [
+            { name: 'Speed Boost', desc: '2x speed for 3 seconds', color: '#00aaff' },
+            { name: 'Invisibility', desc: 'Ghost cant track you for 3 seconds', color: '#aa00ff' },
+            { name: 'Smoke Bomb', desc: 'Confuse ghost for 3 seconds', color: '#888888' }
+        ];
+
+        let selectedItem = null;
+
+        function drawItemSelect() {
+            ctx.fillStyle = COLORS.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Choose Your Item', canvas.width/2, 80);
+
+            ITEMS.forEach((item, i) => {
+                const x = 150 + i * 220;
+                const y = canvas.height / 2 - 60;
+                const w = 180;
+                const h = 200;
+
+                // Box
+                ctx.fillStyle = item.color;
+                ctx.fillRect(x, y, w, h);
+
+                // Name
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText(item.name, x + w/2, y + 50);
+
+                // Description
+                ctx.font = '14px Arial';
+                ctx.fillText(item.desc, x + w/2, y + 100);
+
+                // Click area stored for later
+                item.clickArea = { x, y, w, h };
+            });
+        }
+
         // Start menu
         function drawMenu() {
             ctx.fillStyle = COLORS.background;
@@ -59,14 +100,28 @@
         function gameLoop() {
             if (gameState === 'menu') {
                 drawMenu();
+            } else if (gameState === 'itemSelect') {
+                drawItemSelect();
             }
             requestAnimationFrame(gameLoop);
         }
 
         // Click handler for starting game
-        canvas.addEventListener('click', () => {
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
             if (gameState === 'menu') {
                 gameState = 'itemSelect';
+            } else if (gameState === 'itemSelect') {
+                ITEMS.forEach((item, i) => {
+                    const a = item.clickArea;
+                    if (mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h) {
+                        selectedItem = { ...item, cooldown: 0 };
+                        gameState = 'playing';
+                    }
+                });
             }
         });
 
