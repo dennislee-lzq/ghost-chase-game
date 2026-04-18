@@ -686,7 +686,9 @@
             if (gameState === 'menu') {
                 gameState = 'itemSelect';
             } else if (gameState === 'itemSelect') {
-                ITEM_CLICK_AREAS.forEach((area, i) => {
+                let itemClicked = false;
+                for (let i = 0; i < ITEM_CLICK_AREAS.length; i++) {
+                    const area = ITEM_CLICK_AREAS[i];
                     if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
                         selectedItem = { ...ITEMS[i], cooldown: 0 };
                         smokeBombs = [];
@@ -695,8 +697,14 @@
                         generateMap();
                         lastTime = performance.now();
                         gameState = 'playing';
+                        itemClicked = true;
+                        break;
                     }
-                });
+                }
+                if (!itemClicked) {
+                    console.log('No item clicked at', mx, my);
+                    console.log('Areas:', JSON.stringify(ITEM_CLICK_AREAS));
+                }
             } else if (gameState === 'gameover') {
                 gameState = 'menu';
             }
