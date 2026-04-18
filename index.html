@@ -51,8 +51,8 @@
             visionAngle: Math.PI / 2,
             angle: 0,
             mode: 'patrol',
-            lastTeleport: -30000,
-            lastRush: 0,
+            lastTeleport: Date.now(),
+            lastRush: Date.now(),
             rushDuration: 0,
             patrolTarget: null
         };
