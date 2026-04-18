@@ -29,6 +29,7 @@
         // Game state
         let gameState = 'menu'; // menu, itemSelect, playing, gameover
         let lastTime = 0;
+        let gameResult = '';
 
         // Colors from design
         const COLORS = {
@@ -117,6 +118,10 @@
             exit = { x: canvas.width - 60, y: canvas.height - 60, active: false };
         }
 
+        function circleCollision(x1, y1, r1, x2, y2, r2) {
+            return Math.hypot(x2 - x1, y2 - y1) < r1 + r2;
+        }
+
         function createRandomPosition() {
             let pos;
             let attempts = 0;
@@ -165,6 +170,23 @@
             }
             if (!isCollidingWithWalls(player.x, newY, player.radius)) {
                 player.y = newY;
+            }
+
+            // Check item collection
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (circleCollision(player.x, player.y, player.radius, items[i].x, items[i].y, 8)) {
+                    items.splice(i, 1);
+                    collectedCount++;
+                    if (collectedCount >= ITEMS_TO_WIN) {
+                        exit.active = true;
+                    }
+                }
+            }
+
+            // Check exit
+            if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 20)) {
+                gameState = 'gameover';
+                gameResult = 'win';
             }
         }
 
@@ -222,6 +244,12 @@
                 if (Date.now() - ghost.lastTeleport > 30000) {
                     teleportGhost();
                 }
+            }
+
+            // Check if caught player
+            if (circleCollision(player.x, player.y, player.radius, ghost.x, ghost.y, ghost.radius)) {
+                gameState = 'gameover';
+                gameResult = 'lose';
             }
         }
 
@@ -374,6 +402,12 @@
             // Background
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Show collected count
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Items: ${collectedCount}/${ITEMS_TO_WIN}`, 30, 35);
 
             // Walls
             ctx.fillStyle = COLORS.wall;
