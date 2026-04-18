@@ -48,6 +48,17 @@
         let cooldownOrbs = [];
         const COOLDOWN_ORB_DURATION = 30000; // 30 seconds until respawn
 
+        // Throwable items
+        const THROWABLE_TYPES = {
+            grenade: { color: '#ff4444', name: '手雷', radius: 8, effect: 'explosion' },
+            smokeBomb: { color: '#888888', name: '烟雾弹', radius: 10, effect: 'smoke' },
+            banana: { color: '#ffee00', name: '香蕉皮', radius: 10, effect: 'slip' }
+        };
+        let throwableItems = []; // Items on the map to pick up
+        let playerThrowables = { grenade: 0, smokeBomb: 0, banana: 0 }; // Player's inventory
+        let spacebarHoldStart = 0;
+        let isHoldingSpace = false;
+
         // Camera
         let camera = { x: 0, y: 0 };
 
@@ -86,21 +97,71 @@
         let lastGhostSpawn = Date.now();
 
         // Player
-        let player = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 160, flashTime: 0 };
+        let player = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 160, flashTime: 0, angle: 0 };
         const keys = { w: false, a: false, s: false, d: false };
 
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
             if (key in keys) keys[key] = true;
-            if (e.code === 'Space' && gameState === 'playing' && selectedItem) {
-                useItem();
+            if (e.code === 'Space' && gameState === 'playing') {
+                if (isHoldingSpace === false) {
+                    isHoldingSpace = true;
+                    spacebarHoldStart = Date.now();
+                }
             }
         });
 
         document.addEventListener('keyup', (e) => {
             const key = e.key.toLowerCase();
             if (key in keys) keys[key] = false;
+            if (e.code === 'Space' && gameState === 'playing' && isHoldingSpace) {
+                // Determine what to throw based on hold duration
+                const holdDuration = Date.now() - spacebarHoldStart;
+                if (holdDuration < 200) {
+                    // Short tap - use current item
+                    if (selectedItem) useItem();
+                } else {
+                    // Long press - throw item
+                    throwItem();
+                }
+                isHoldingSpace = false;
+            }
         });
+
+        // Active effects from thrown items
+        let activeEffects = [];
+
+        function throwItem() {
+            // Find the first throwable item we have
+            let throwType = null;
+            if (playerThrowables.grenade > 0) {
+                throwType = 'grenade';
+                playerThrowables.grenade--;
+            } else if (playerThrowables.smokeBomb > 0) {
+                throwType = 'smokeBomb';
+                playerThrowables.smokeBomb--;
+            } else if (playerThrowables.banana > 0) {
+                throwType = 'banana';
+                playerThrowables.banana--;
+            }
+
+            if (!throwType) return;
+
+            // Calculate throw direction (toward mouse or facing direction)
+            const throwAngle = player.angle || 0;
+            const throwDist = 150 + Math.random() * 100;
+            const targetX = player.x + Math.cos(throwAngle) * throwDist;
+            const targetY = player.y + Math.sin(throwAngle) * throwDist;
+
+            // Create thrown item effect
+            activeEffects.push({
+                type: throwType,
+                x: targetX,
+                y: targetY,
+                startTime: Date.now(),
+                duration: throwType === 'grenade' ? 2000 : 5000
+            });
+        }
 
         // Map generation
         let walls = [];
@@ -149,6 +210,8 @@
 
             // Spawn cooldown orbs
             spawnCooldownOrbs();
+            // Spawn throwable items
+            spawnThrowableItems();
         }
 
         function spawnCooldownOrbs() {
@@ -162,9 +225,32 @@
             }
         }
 
+        function spawnThrowableItems() {
+            throwableItems = [];
+            const types = ['grenade', 'smokeBomb', 'banana'];
+            for (let i = 0; i < 6; i++) {
+                const type = types[Math.floor(Math.random() * types.length)];
+                throwableItems.push({
+                    ...createRandomPosition(),
+                    type: type,
+                    radius: THROWABLE_TYPES[type].radius
+                });
+            }
+        }
+
         function spawnMoreItems() {
             for (let i = 0; i < ITEMS_PER_SPAWN; i++) {
                 items.push(createRandomPosition());
+            }
+            // Also spawn more throwable items
+            const types = ['grenade', 'smokeBomb', 'banana'];
+            for (let i = 0; i < 2; i++) {
+                const type = types[Math.floor(Math.random() * types.length)];
+                throwableItems.push({
+                    ...createRandomPosition(),
+                    type: type,
+                    radius: THROWABLE_TYPES[type].radius
+                });
             }
         }
 
@@ -212,6 +298,11 @@
             if (keys.a) dx -= 1;
             if (keys.d) dx += 1;
 
+            // Update player facing angle based on movement
+            if (dx !== 0 || dy !== 0) {
+                player.angle = Math.atan2(dy, dx);
+            }
+
             if (dx !== 0 && dy !== 0) {
                 dx *= 0.707;
                 dy *= 0.707;
@@ -220,8 +311,19 @@
             const speed = selectedItem && selectedItem.active && selectedItem.name === '加速药水'
                 ? player.speed * 2 : player.speed;
 
-            let newX = player.x + dx * speed * dt;
-            let newY = player.y + dy * speed * dt;
+            // Check banana slip effect
+            let actualSpeed = speed;
+            for (const effect of activeEffects) {
+                if (effect.type === 'banana' && effect.active) {
+                    if (circleCollision(player.x, player.y, player.radius, effect.x, effect.y, 30)) {
+                        actualSpeed *= 0.3; // Slow down significantly on banana peel
+                        break;
+                    }
+                }
+            }
+
+            let newX = player.x + dx * actualSpeed * dt;
+            let newY = player.y + dy * actualSpeed * dt;
 
             // Clamp to world bounds
             newX = Math.max(30, Math.min(WORLD_WIDTH - 30, newX));
@@ -268,6 +370,16 @@
                 }
             });
 
+            // Check throwable item collection
+            for (let i = throwableItems.length - 1; i >= 0; i--) {
+                const t = throwableItems[i];
+                if (circleCollision(player.x, player.y, player.radius, t.x, t.y, t.radius)) {
+                    playerThrowables[t.type]++;
+                    throwableItems.splice(i, 1);
+                    player.flashTime = now;
+                }
+            }
+
             // Check exit
             if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 25)) {
                 gameState = 'gameover';
@@ -282,8 +394,11 @@
         }
 
         function drawPlayer() {
+            const screenX = player.x - camera.x;
+            const screenY = player.y - camera.y;
+
             ctx.beginPath();
-            ctx.arc(player.x - camera.x, player.y - camera.y, player.radius, 0, Math.PI * 2);
+            ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
             ctx.fillStyle = COLORS.player;
             ctx.fill();
             ctx.shadowBlur = 25;
@@ -291,9 +406,19 @@
             ctx.fill();
             ctx.shadowBlur = 0;
 
+            // Direction indicator
+            const dirX = screenX + Math.cos(player.angle) * (player.radius + 8);
+            const dirY = screenY + Math.sin(player.angle) * (player.radius + 8);
+            ctx.beginPath();
+            ctx.moveTo(screenX + Math.cos(player.angle) * player.radius, screenY + Math.sin(player.angle) * player.radius);
+            ctx.lineTo(dirX, dirY);
+            ctx.strokeStyle = COLORS.player;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
             if (player.flashTime && Date.now() - player.flashTime < 200) {
                 ctx.beginPath();
-                ctx.arc(player.x - camera.x, player.y - camera.y, player.radius + 12, 0, Math.PI * 2);
+                ctx.arc(screenX, screenY, player.radius + 12, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
                 ctx.fill();
             }
@@ -383,6 +508,37 @@
                     gameResult = 'lose';
                 }
             });
+        }
+
+        function updateActiveEffects(dt) {
+            const now = Date.now();
+            for (let i = activeEffects.length - 1; i >= 0; i--) {
+                const effect = activeEffects[i];
+                const age = now - effect.startTime;
+
+                if (age > effect.duration) {
+                    activeEffects.splice(i, 1);
+                    continue;
+                }
+
+                // Activate the effect after a delay
+                if (!effect.active && age > 500) { // 0.5s delay before effect activates
+                    effect.active = true;
+
+                    // Grenade pushes ghosts away
+                    if (effect.type === 'grenade') {
+                        ghosts.forEach(ghost => {
+                            const dist = Math.hypot(ghost.x - effect.x, ghost.y - effect.y);
+                            if (dist < 150) {
+                                const angle = Math.atan2(ghost.y - effect.y, ghost.x - effect.x);
+                                const pushDist = (150 - dist) * 0.3;
+                                ghost.x += Math.cos(angle) * pushDist;
+                                ghost.y += Math.sin(angle) * pushDist;
+                            }
+                        });
+                    }
+                }
+            }
         }
 
         function moveGhostWithCollision(ghost, dx, dy) {
@@ -614,6 +770,135 @@
                 canvas.width * scaleX,
                 canvas.height * scaleY
             );
+        }
+
+        function drawThrowableItems() {
+            const now = Date.now();
+            throwableItems.forEach(t => {
+                const screenX = t.x - camera.x;
+                const screenY = t.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                const typeInfo = THROWABLE_TYPES[t.type];
+
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, t.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = typeInfo.color;
+                ctx.fill();
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = typeInfo.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        function drawActiveEffects() {
+            const now = Date.now();
+            activeEffects.forEach(effect => {
+                const screenX = effect.x - camera.x;
+                const screenY = effect.y - camera.y;
+                const age = now - effect.startTime;
+                const progress = age / effect.duration;
+
+                if (effect.type === 'grenade') {
+                    // Explosion effect
+                    if (effect.active) {
+                        const radius = 100 * Math.sin(progress * Math.PI);
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(255, 100, 0, ${0.5 * (1 - progress)})`;
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, radius * 0.5, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(255, 255, 0, ${0.7 * (1 - progress)})`;
+                        ctx.fill();
+                    } else {
+                        // Grenade on ground
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
+                        ctx.fillStyle = '#ff4444';
+                        ctx.fill();
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = '#ff0000';
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                    }
+                } else if (effect.type === 'smokeBomb') {
+                    // Extra smoke effect
+                    const radius = effect.active ? 120 : 30;
+                    const alpha = effect.active ? 0.4 * (1 - progress) : 0.6;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(100, 100, 100, ${alpha})`;
+                    ctx.fill();
+                } else if (effect.type === 'banana') {
+                    // Banana peel
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, effect.active ? 30 : 12, 0, Math.PI * 2);
+                    ctx.fillStyle = effect.active ? `rgba(255, 238, 0, ${0.5 * (1 - progress)})` : '#ffee00';
+                    ctx.fill();
+                }
+            });
+        }
+
+        function drawThrowableUI() {
+            ctx.textAlign = 'left';
+            ctx.font = '14px Arial';
+            let y = 80;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('投掷物:', 20, y);
+            y += 20;
+            ctx.fillStyle = '#ff4444';
+            ctx.fillText(`手雷: ${playerThrowables.grenade}`, 20, y);
+            y += 18;
+            ctx.fillStyle = '#888888';
+            ctx.fillText(`烟雾弹: ${playerThrowables.smokeBomb}`, 20, y);
+            y += 18;
+            ctx.fillStyle = '#ffee00';
+            ctx.fillText(`香蕉皮: ${playerThrowables.banana}`, 20, y);
+        }
+
+        function drawChargingIndicator() {
+            if (!isHoldingSpace || gameState !== 'playing') return;
+
+            const holdDuration = Date.now() - spacebarHoldStart;
+            const chargePercent = Math.min(holdDuration / 1000, 1); // Max 1 second charge
+
+            // Determine which item will be thrown
+            let throwType = null;
+            if (playerThrowables.grenade > 0) throwType = 'grenade';
+            else if (playerThrowables.smokeBomb > 0) throwType = 'smokeBomb';
+            else if (playerThrowables.banana > 0) throwType = 'banana';
+            else if (selectedItem && selectedItem.cooldown <= 0) throwType = 'item';
+
+            if (!throwType) return;
+
+            // Draw charge bar
+            const barWidth = 60;
+            const barHeight = 8;
+            const barX = canvas.width / 2 - barWidth / 2;
+            const barY = canvas.height - 60;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            let color = '#ffffff';
+            if (throwType === 'grenade') color = '#ff4444';
+            else if (throwType === 'smokeBomb') color = '#888888';
+            else if (throwType === 'banana') color = '#ffee00';
+
+            ctx.fillStyle = color;
+            ctx.fillRect(barX, barY, barWidth * chargePercent, barHeight);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(chargePercent >= 1 ? '松手投掷!' : '按住充能', canvas.width / 2, barY - 5);
         }
 
         function drawItemUI() {
@@ -849,13 +1134,18 @@
             } else if (gameState === 'playing') {
                 updatePlayer(dt);
                 updateGhosts(dt);
+                updateActiveEffects(dt);
                 updateCamera();
                 drawMap();
+                drawThrowableItems();
+                drawActiveEffects();
                 drawGhosts();
                 drawPlayer();
                 drawSmokeBombs();
                 drawCooldownOrbs();
                 drawItemUI();
+                drawThrowableUI();
+                drawChargingIndicator();
                 drawInstructions();
                 drawMinimap();
             } else if (gameState === 'gameover') {
