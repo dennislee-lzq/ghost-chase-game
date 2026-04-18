@@ -38,6 +38,16 @@
         const ITEMS_TO_WIN = 20;
         const ITEMS_PER_SPAWN = 5;
 
+        // Minimap settings
+        const MINIMAP_WIDTH = 180;
+        const MINIMAP_HEIGHT = 135;
+        const MINIMAP_X = 10;
+        const MINIMAP_Y = 10;
+
+        // Cooldown orb settings
+        let cooldownOrbs = [];
+        const COOLDOWN_ORB_DURATION = 30000; // 30 seconds until respawn
+
         // Camera
         let camera = { x: 0, y: 0 };
 
@@ -50,7 +60,9 @@
             item: '#ffd700',
             exitInactive: '#555555',
             exitActive: '#00ff00',
-            alertZone: 'rgba(255, 50, 50, 0.15)'
+            alertZone: 'rgba(255, 50, 50, 0.15)',
+            cooldownOrb: '#00ffff',
+            teleportTarget: 'rgba(255, 100, 100, 0.6)'
         };
 
         function createGhost(x, y) {
@@ -134,6 +146,20 @@
 
             // Exit at far corner from player start
             exit = { x: WORLD_WIDTH - 100, y: WORLD_HEIGHT - 100, active: false };
+
+            // Spawn cooldown orbs
+            spawnCooldownOrbs();
+        }
+
+        function spawnCooldownOrbs() {
+            cooldownOrbs = [];
+            for (let i = 0; i < 5; i++) {
+                cooldownOrbs.push({
+                    ...createRandomPosition(),
+                    radius: 12,
+                    lastCollected: -COOLDOWN_ORB_DURATION
+                });
+            }
         }
 
         function spawnMoreItems() {
@@ -226,6 +252,21 @@
                     }
                 }
             }
+
+            // Check cooldown orb collection
+            const now = Date.now();
+            cooldownOrbs.forEach(orb => {
+                if (circleCollision(player.x, player.y, player.radius, orb.x, orb.y, orb.radius)) {
+                    if (now - orb.lastCollected > COOLDOWN_ORB_DURATION) {
+                        // Reduce item cooldowns by 5 seconds
+                        if (selectedItem && selectedItem.cooldown > 0) {
+                            selectedItem.cooldown = Math.max(0, selectedItem.cooldown - 5000);
+                        }
+                        orb.lastCollected = now;
+                        player.flashTime = now;
+                    }
+                }
+            });
 
             // Check exit
             if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 25)) {
@@ -431,6 +472,160 @@
             }
         }
 
+        function drawCooldownOrbs() {
+            const now = Date.now();
+            cooldownOrbs.forEach(orb => {
+                const timeSinceCollected = now - orb.lastCollected;
+                if (timeSinceCollected < COOLDOWN_ORB_DURATION) {
+                    return; // Still in cooldown, don't draw
+                }
+
+                const screenX = orb.x - camera.x;
+                const screenY = orb.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                // Pulsing glow
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.cooldownOrb;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = COLORS.cooldownOrb;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Inner circle
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            });
+        }
+
+        function drawMinimap() {
+            const now = Date.now();
+            const scaleX = MINIMAP_WIDTH / WORLD_WIDTH;
+            const scaleY = MINIMAP_HEIGHT / WORLD_HEIGHT;
+
+            // Minimap background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(MINIMAP_X, MINIMAP_Y, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+
+            // Border
+            ctx.strokeStyle = '#444444';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(MINIMAP_X, MINIMAP_Y, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+
+            // Walls
+            ctx.fillStyle = COLORS.wall;
+            walls.forEach(w => {
+                const mx = MINIMAP_X + w.x * scaleX;
+                const my = MINIMAP_Y + w.y * scaleY;
+                const mw = w.w * scaleX;
+                const mh = w.h * scaleY;
+                ctx.fillRect(mx, my, mw, mh);
+            });
+
+            // Ghost alert ranges and teleport targets
+            ghosts.forEach(ghost => {
+                const gmx = MINIMAP_X + ghost.x * scaleX;
+                const gmy = MINIMAP_Y + ghost.y * scaleY;
+
+                // Alert range circle
+                ctx.beginPath();
+                ctx.arc(gmx, gmy, ghost.alertRange * scaleX, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+                ctx.fill();
+
+                // Ghost teleport target (where it will teleport next)
+                const timeSinceTeleport = now - ghost.lastTeleport;
+                const teleportInterval = 20000; // 20 seconds
+                if (timeSinceTeleport > teleportInterval * 0.8) {
+                    // Show teleport target when close to teleport
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = 150 + Math.random() * 200;
+                    let teleportX = player.x + Math.cos(angle) * dist;
+                    let teleportY = player.y + Math.sin(angle) * dist;
+                    teleportX = Math.max(50, Math.min(WORLD_WIDTH - 50, teleportX));
+                    teleportY = Math.max(50, Math.min(WORLD_HEIGHT - 50, teleportY));
+
+                    const tmx = MINIMAP_X + teleportX * scaleX;
+                    const tmy = MINIMAP_Y + teleportY * scaleY;
+
+                    // Pulsing teleport target
+                    const pulse = 0.5 + Math.sin(now / 100) * 0.5;
+                    ctx.beginPath();
+                    ctx.arc(tmx, tmy, 4 + pulse * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 100, 100, ${0.5 + pulse * 0.5})`;
+                    ctx.fill();
+                }
+            });
+
+            // Items
+            items.forEach(item => {
+                const imx = MINIMAP_X + item.x * scaleX;
+                const imy = MINIMAP_Y + item.y * scaleY;
+                ctx.beginPath();
+                ctx.arc(imx, imy, 2, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.item;
+                ctx.fill();
+            });
+
+            // Cooldown orbs
+            cooldownOrbs.forEach(orb => {
+                if (now - orb.lastCollected < COOLDOWN_ORB_DURATION) return;
+                const omx = MINIMAP_X + orb.x * scaleX;
+                const omy = MINIMAP_Y + orb.y * scaleY;
+                ctx.beginPath();
+                ctx.arc(omx, omy, 3, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.cooldownOrb;
+                ctx.fill();
+            });
+
+            // Exit
+            if (exit.active) {
+                const emx = MINIMAP_X + exit.x * scaleX;
+                const emy = MINIMAP_Y + exit.y * scaleY;
+                ctx.beginPath();
+                ctx.arc(emx, emy, 4, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.exitActive;
+                ctx.fill();
+            }
+
+            // Ghosts
+            ghosts.forEach(ghost => {
+                const gmx = MINIMAP_X + ghost.x * scaleX;
+                const gmy = MINIMAP_Y + ghost.y * scaleY;
+                ctx.beginPath();
+                ctx.arc(gmx, gmy, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff0000';
+                ctx.fill();
+            });
+
+            // Player
+            const pmx = MINIMAP_X + player.x * scaleX;
+            const pmy = MINIMAP_Y + player.y * scaleY;
+            ctx.beginPath();
+            ctx.arc(pmx, pmy, 4, 0, Math.PI * 2);
+            ctx.fillStyle = COLORS.player;
+            ctx.fill();
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = COLORS.player;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Camera viewport rectangle
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(
+                MINIMAP_X + camera.x * scaleX,
+                MINIMAP_Y + camera.y * scaleY,
+                canvas.width * scaleX,
+                canvas.height * scaleY
+            );
+        }
+
         function drawItemUI() {
             if (!selectedItem) return;
 
@@ -455,7 +650,7 @@
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = '14px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText('WASD: 移动 | 空格: 使用道具 | 收集20个物品后从绿色出口逃脱', 20, canvas.height - 20);
+            ctx.fillText('WASD移动 | 空格技能 | 青色=冷却球 | 红色闪烁=鬼传送点 | 左下小地图', 20, canvas.height - 20);
         }
 
         function drawGameOver() {
@@ -669,8 +864,10 @@
                 drawGhosts();
                 drawPlayer();
                 drawSmokeBombs();
+                drawCooldownOrbs();
                 drawItemUI();
                 drawInstructions();
+                drawMinimap();
             } else if (gameState === 'gameover') {
                 drawMap();
                 drawGhosts();
