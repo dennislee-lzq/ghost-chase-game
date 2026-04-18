@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +13,7 @@
             align-items: center;
             min-height: 100vh;
             font-family: Arial, sans-serif;
+            overflow: hidden;
         }
         canvas {
             border: 2px solid #16213e;
@@ -27,30 +28,38 @@
         const ctx = canvas.getContext('2d');
 
         // Game state
-        let gameState = 'menu'; // menu, itemSelect, playing, gameover
+        let gameState = 'menu';
         let lastTime = 0;
         let gameResult = '';
 
-        // Colors from design
+        // Map settings - large world
+        const WORLD_WIDTH = 3200;
+        const WORLD_HEIGHT = 2400;
+        const ITEMS_TO_WIN = 20;
+        const ITEMS_PER_SPAWN = 5;
+
+        // Camera
+        let camera = { x: 0, y: 0 };
+
+        // Colors
         const COLORS = {
             background: '#1a1a2e',
             wall: '#16213e',
             player: '#ffffff',
-            ghost: 'rgba(255, 0, 0, 0.7)',
+            ghost: 'rgba(255, 0, 0, 0.8)',
             item: '#ffd700',
             exitInactive: '#555555',
             exitActive: '#00ff00',
-            ghostVision: 'rgba(255, 100, 100, 0.2)'
+            alertZone: 'rgba(255, 50, 50, 0.15)'
         };
 
         function createGhost(x, y) {
             return {
                 x: x,
                 y: y,
-                radius: 15,
-                speed: 160,
-                visionRange: 200,
-                visionAngle: Math.PI / 2,
+                radius: 18,
+                speed: 180,
+                alertRange: 350,
                 angle: 0,
                 mode: 'patrol',
                 lastTeleport: Date.now(),
@@ -64,8 +73,8 @@
         let ghosts = [];
         let lastGhostSpawn = Date.now();
 
-        // Player object and input tracking
-        let player = { x: 60, y: canvas.height - 60, radius: 12, speed: 150, flashTime: 0 };
+        // Player
+        let player = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 160, flashTime: 0 };
         const keys = { w: false, a: false, s: false, d: false };
 
         document.addEventListener('keydown', (e) => {
@@ -85,50 +94,52 @@
         let walls = [];
         let items = [];
         let exit = { x: 0, y: 0, active: false };
-        const COLLECTIBLE_COUNT = 8;
-        const ITEMS_TO_WIN = 5;
         let collectedCount = 0;
+        let totalCollected = 0;
 
         function generateMap() {
             walls = [];
             items = [];
             collectedCount = 0;
+            totalCollected = 0;
             exit.active = false;
 
             // Border walls
-            walls.push({ x: 0, y: 0, w: canvas.width, h: 20 }); // top
-            walls.push({ x: 0, y: canvas.height - 20, w: canvas.width, h: 20 }); // bottom
-            walls.push({ x: 0, y: 0, w: 20, h: canvas.height }); // left
-            walls.push({ x: canvas.width - 20, y: 0, w: 20, h: canvas.height }); // right
+            walls.push({ x: 0, y: 0, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: WORLD_HEIGHT - 30, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: 0, w: 30, h: WORLD_HEIGHT });
+            walls.push({ x: WORLD_WIDTH - 30, y: 0, w: 30, h: WORLD_HEIGHT });
 
-            // Random interior walls (simple room partition)
-            const numWalls = 6 + Math.floor(Math.random() * 5);
+            // Many interior walls for maze-like structure
+            const numWalls = 40 + Math.floor(Math.random() * 20);
             for (let i = 0; i < numWalls; i++) {
                 const horizontal = Math.random() > 0.5;
                 if (horizontal) {
-                    const y = 80 + Math.random() * (canvas.height - 160);
-                    const x = 40 + Math.random() * (canvas.width - 200);
-                    const w = 100 + Math.random() * 150;
-                    walls.push({ x, y, w, h: 15 });
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 300);
+                    const w = 80 + Math.random() * 200;
+                    walls.push({ x, y, w, h: 20 });
                 } else {
-                    const x = 40 + Math.random() * (canvas.width - 200);
-                    const y = 80 + Math.random() * (canvas.height - 160);
-                    const h = 100 + Math.random() * 150;
-                    walls.push({ x, y, w: 15, h });
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 200);
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 300);
+                    const h = 80 + Math.random() * 200;
+                    walls.push({ x, y, w: 20, h });
                 }
             }
 
-            // Generate items at random valid positions
-            for (let i = 0; i < COLLECTIBLE_COUNT; i++) {
+            // Generate initial items spread across map
+            for (let i = 0; i < 25; i++) {
                 items.push(createRandomPosition());
             }
 
-            // Exit at top-right corner area
-            exit = { x: canvas.width - 60, y: canvas.height - 60, active: false };
+            // Exit at far corner from player start
+            exit = { x: WORLD_WIDTH - 100, y: WORLD_HEIGHT - 100, active: false };
         }
 
-        function circleCollision(x1, y1, r1, x2, y2, r2) {
-            return Math.hypot(x2 - x1, y2 - y1) < r1 + r2;
+        function spawnMoreItems() {
+            for (let i = 0; i < ITEMS_PER_SPAWN; i++) {
+                items.push(createRandomPosition());
+            }
         }
 
         function createRandomPosition() {
@@ -136,11 +147,11 @@
             let attempts = 0;
             do {
                 pos = {
-                    x: 50 + Math.random() * (canvas.width - 100),
-                    y: 50 + Math.random() * (canvas.height - 100)
+                    x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                    y: 80 + Math.random() * (WORLD_HEIGHT - 160)
                 };
                 attempts++;
-            } while (attempts < 50 && isCollidingWithWalls(pos.x, pos.y, 10));
+            } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
             return pos;
         }
 
@@ -154,6 +165,16 @@
             return false;
         }
 
+        function updateCamera() {
+            // Camera follows player, centered
+            let targetX = player.x - canvas.width / 2;
+            let targetY = player.y - canvas.height / 2;
+
+            // Clamp to world bounds
+            camera.x = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, targetX));
+            camera.y = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, targetY));
+        }
+
         function updatePlayer(dt) {
             let dx = 0, dy = 0;
             if (keys.w) dy -= 1;
@@ -161,7 +182,6 @@
             if (keys.a) dx -= 1;
             if (keys.d) dx += 1;
 
-            // Normalize diagonal movement
             if (dx !== 0 && dy !== 0) {
                 dx *= 0.707;
                 dy *= 0.707;
@@ -173,7 +193,10 @@
             let newX = player.x + dx * speed * dt;
             let newY = player.y + dy * speed * dt;
 
-            // Wall collision
+            // Clamp to world bounds
+            newX = Math.max(30, Math.min(WORLD_WIDTH - 30, newX));
+            newY = Math.max(30, Math.min(WORLD_HEIGHT - 30, newY));
+
             if (!isCollidingWithWalls(newX, player.y, player.radius)) {
                 player.x = newX;
             }
@@ -183,10 +206,17 @@
 
             // Check item collection
             for (let i = items.length - 1; i >= 0; i--) {
-                if (circleCollision(player.x, player.y, player.radius, items[i].x, items[i].y, 8)) {
+                if (circleCollision(player.x, player.y, player.radius, items[i].x, items[i].y, 10)) {
                     items.splice(i, 1);
                     collectedCount++;
+                    totalCollected++;
                     player.flashTime = Date.now();
+
+                    // Spawn more items every ITEMS_PER_SPAWN collected
+                    if (totalCollected % ITEMS_PER_SPAWN === 0 && totalCollected < ITEMS_TO_WIN) {
+                        spawnMoreItems();
+                    }
+
                     if (collectedCount >= ITEMS_TO_WIN) {
                         exit.active = true;
                     }
@@ -194,7 +224,7 @@
             }
 
             // Check exit
-            if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 20)) {
+            if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 25)) {
                 gameState = 'gameover';
                 gameResult = 'win';
             }
@@ -208,33 +238,33 @@
 
         function drawPlayer() {
             ctx.beginPath();
-            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.arc(player.x - camera.x, player.y - camera.y, player.radius, 0, Math.PI * 2);
             ctx.fillStyle = COLORS.player;
             ctx.fill();
-            // Glow effect
-            ctx.shadowBlur = 20;
+            ctx.shadowBlur = 25;
             ctx.shadowColor = COLORS.player;
             ctx.fill();
             ctx.shadowBlur = 0;
-            // Flash effect when collecting
+
             if (player.flashTime && Date.now() - player.flashTime < 200) {
                 ctx.beginPath();
-                ctx.arc(player.x, player.y, player.radius + 10, 0, Math.PI * 2);
+                ctx.arc(player.x - camera.x, player.y - camera.y, player.radius + 12, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
                 ctx.fill();
             }
         }
 
         function updateGhosts(dt) {
-            // Spawn new ghost every 30 seconds
-            if (Date.now() - lastGhostSpawn > 30000) {
-                const corner = Math.floor(Math.random() * 4);
-                let nx, ny;
-                if (corner === 0) { nx = 60; ny = 60; }
-                else if (corner === 1) { nx = canvas.width - 60; ny = 60; }
-                else if (corner === 2) { nx = 60; ny = canvas.height - 60; }
-                else { nx = canvas.width - 60; ny = canvas.height - 60; }
-                ghosts.push(createGhost(nx, ny));
+            // Spawn new ghost every 20 seconds
+            if (Date.now() - lastGhostSpawn > 20000) {
+                const corners = [
+                    { x: 100, y: 100 },
+                    { x: WORLD_WIDTH - 100, y: 100 },
+                    { x: 100, y: WORLD_HEIGHT - 100 },
+                    { x: WORLD_WIDTH - 100, y: WORLD_HEIGHT - 100 }
+                ];
+                const corner = corners[Math.floor(Math.random() * corners.length)];
+                ghosts.push(createGhost(corner.x, corner.y));
                 lastGhostSpawn = Date.now();
             }
 
@@ -255,41 +285,50 @@
                 // Check invisibility
                 const isInvisible = selectedItem && selectedItem.active && selectedItem.name === '隐身药水';
 
-                // Modify canSeePlayer
-                const canSeePlayer = !isInvisible && !inSmoke && distToPlayer < ghost.visionRange &&
-                    Math.abs(normalizeAngle(angleToPlayer - ghost.angle)) < ghost.visionAngle / 2 &&
-                    hasLineOfSight(ghost.x, ghost.y, player.x, player.y);
-
-                ghost.mode = canSeePlayer ? 'chase' : 'patrol';
+                // If in alert range and not invisible, ALWAYS chase (no patrol)
+                const inAlertRange = distToPlayer < ghost.alertRange && !isInvisible && !inSmoke;
+                ghost.mode = inAlertRange ? 'chase' : 'patrol';
 
                 let currentSpeed = ghost.speed;
+
                 if (ghost.rushDuration > 0) {
                     ghost.rushDuration -= dt * 1000;
-                    currentSpeed *= 1.5;
+                    currentSpeed *= 1.8;
                 }
 
                 if (ghost.mode === 'chase') {
-                    // Smart pathfinding - try to move toward player
-                    const moved = moveGhostSmart(ghost, angleToPlayer, currentSpeed, dt);
+                    // Direct chase toward player
+                    const dx = Math.cos(angleToPlayer) * currentSpeed * dt;
+                    const dy = Math.sin(angleToPlayer) * currentSpeed * dt;
+
+                    if (!moveGhostWithCollision(ghost, dx, dy)) {
+                        // Stuck - teleport to player vicinity
+                        teleportGhostNearPlayer(ghost);
+                    }
                     ghost.angle = angleToPlayer;
 
-                    if (Date.now() - ghost.lastRush > 15000 && ghost.rushDuration <= 0) {
-                        ghost.rushDuration = 2000;
+                    // Rush skill more often in chase
+                    if (Date.now() - ghost.lastRush > 8000 && ghost.rushDuration <= 0) {
+                        ghost.rushDuration = 2500;
                         ghost.lastRush = Date.now();
                     }
                 } else {
-                    if (!ghost.patrolTarget || Math.hypot(ghost.patrolTarget.x - ghost.x, ghost.patrolTarget.y - ghost.y) < 10) {
+                    // Patrol - wander
+                    if (!ghost.patrolTarget || Math.hypot(ghost.patrolTarget.x - ghost.x, ghost.patrolTarget.y - ghost.y) < 20) {
                         ghost.patrolTarget = {
-                            x: 100 + Math.random() * (canvas.width - 200),
-                            y: 100 + Math.random() * (canvas.height - 200)
+                            x: 100 + Math.random() * (WORLD_WIDTH - 200),
+                            y: 100 + Math.random() * (WORLD_HEIGHT - 200)
                         };
                     }
                     const angleToTarget = Math.atan2(ghost.patrolTarget.y - ghost.y, ghost.patrolTarget.x - ghost.x);
                     ghost.angle = angleToTarget;
-                    moveGhostSmart(ghost, angleToTarget, currentSpeed * 0.5, dt);
+                    const dx = Math.cos(angleToTarget) * currentSpeed * 0.6 * dt;
+                    const dy = Math.sin(angleToTarget) * currentSpeed * 0.6 * dt;
+                    moveGhostWithCollision(ghost, dx, dy);
 
-                    if (Date.now() - ghost.lastTeleport > 30000) {
-                        teleportGhost(ghost);
+                    // Teleport every 15 seconds in patrol
+                    if (Date.now() - ghost.lastTeleport > 15000) {
+                        teleportGhostNearPlayer(ghost);
                     }
                 }
 
@@ -301,99 +340,30 @@
             });
         }
 
-        // Smart ghost movement that tries to navigate around walls
-        function moveGhostSmart(ghost, targetAngle, speed, dt) {
-            const dx = Math.cos(targetAngle) * speed * dt;
-            const dy = Math.sin(targetAngle) * speed * dt;
-
-            // Try direct path
+        function moveGhostWithCollision(ghost, dx, dy) {
+            let moved = false;
             if (!isCollidingWithWalls(ghost.x + dx, ghost.y + dy, ghost.radius)) {
                 ghost.x += dx;
                 ghost.y += dy;
-                ghost.stuckTimer = 0;
-                return true;
-            }
-
-            // Try sliding along walls
-            let moved = false;
-            if (!isCollidingWithWalls(ghost.x + dx, ghost.y, ghost.radius)) {
+                moved = true;
+            } else if (!isCollidingWithWalls(ghost.x + dx, ghost.y, ghost.radius)) {
                 ghost.x += dx;
                 moved = true;
-            }
-            if (!isCollidingWithWalls(ghost.x, ghost.y + dy, ghost.radius)) {
+            } else if (!isCollidingWithWalls(ghost.x, ghost.y + dy, ghost.radius)) {
                 ghost.y += dy;
                 moved = true;
             }
-
-            if (moved) {
-                ghost.stuckTimer = 0;
-                return true;
-            }
-
-            // Stuck - try perpendicular directions
-            ghost.stuckTimer += dt;
-            if (ghost.stuckTimer > 0.5) {
-                // Try rotating left or right to find a path
-                const perpAngle1 = targetAngle + Math.PI / 2;
-                const perpAngle2 = targetAngle - Math.PI / 2;
-                const perpDx1 = Math.cos(perpAngle1) * speed * dt;
-                const perpDy1 = Math.sin(perpAngle1) * speed * dt;
-                const perpDx2 = Math.cos(perpAngle2) * speed * dt;
-                const perpDy2 = Math.sin(perpAngle2) * speed * dt;
-
-                if (!isCollidingWithWalls(ghost.x + perpDx1, ghost.y + perpDy1, ghost.radius)) {
-                    ghost.x += perpDx1;
-                    ghost.y += perpDy1;
-                    ghost.stuckTimer = 0;
-                    return true;
-                } else if (!isCollidingWithWalls(ghost.x + perpDx2, ghost.y + perpDy2, ghost.radius)) {
-                    ghost.x += perpDx2;
-                    ghost.y += perpDy2;
-                    ghost.stuckTimer = 0;
-                    return true;
-                }
-
-                // Try going backwards slightly
-                const backAngle = targetAngle + Math.PI;
-                const backDx = Math.cos(backAngle) * speed * dt * 0.5;
-                const backDy = Math.sin(backAngle) * speed * dt * 0.5;
-                if (!isCollidingWithWalls(ghost.x + backDx, ghost.y + backDy, ghost.radius)) {
-                    ghost.x += backDx;
-                    ghost.y += backDy;
-                    ghost.stuckTimer = 0;
-                    return true;
-                }
-
-                ghost.stuckTimer = 0;
-            }
-            return false;
+            return moved;
         }
 
-        function normalizeAngle(angle) {
-            while (angle > Math.PI) angle -= Math.PI * 2;
-            while (angle < -Math.PI) angle += Math.PI * 2;
-            return angle;
-        }
-
-        function hasLineOfSight(x1, y1, x2, y2) {
-            const steps = 20;
-            for (let i = 0; i <= steps; i++) {
-                const t = i / steps;
-                const x = x1 + (x2 - x1) * t;
-                const y = y1 + (y2 - y1) * t;
-                if (isCollidingWithWalls(x, y, 2)) return false;
-            }
-            return true;
-        }
-
-        function teleportGhost(ghost) {
+        function teleportGhostNearPlayer(ghost) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = 100 + Math.random() * 100;
+            const dist = 150 + Math.random() * 200;
             let newX = player.x + Math.cos(angle) * dist;
             let newY = player.y + Math.sin(angle) * dist;
 
-            newX = Math.max(30, Math.min(canvas.width - 30, newX));
-            newY = Math.max(30, Math.min(canvas.height - 30, newY));
+            newX = Math.max(50, Math.min(WORLD_WIDTH - 50, newX));
+            newY = Math.max(50, Math.min(WORLD_HEIGHT - 50, newY));
 
             if (!isCollidingWithWalls(newX, newY, ghost.radius)) {
                 ghost.x = newX;
@@ -404,30 +374,36 @@
 
         function drawGhosts() {
             ghosts.forEach(ghost => {
+                const screenX = ghost.x - camera.x;
+                const screenY = ghost.y - camera.y;
+
+                // Only draw if on screen
+                if (screenX < -100 || screenX > canvas.width + 100 ||
+                    screenY < -100 || screenY > canvas.height + 100) return;
+
+                // Alert zone (red area)
                 ctx.beginPath();
-                ctx.moveTo(ghost.x, ghost.y);
-                ctx.arc(ghost.x, ghost.y, ghost.visionRange,
-                    ghost.angle - ghost.visionAngle / 2,
-                    ghost.angle + ghost.visionAngle / 2);
-                ctx.closePath();
-                ctx.fillStyle = COLORS.ghostVision;
+                ctx.arc(screenX, screenY, ghost.alertRange, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.alertZone;
                 ctx.fill();
 
-                const pulse = 1 + Math.sin(Date.now() / 200) * 0.1;
+                // Ghost body with pulse
+                const pulse = 1 + Math.sin(Date.now() / 150) * 0.15;
                 ctx.beginPath();
-                ctx.arc(ghost.x, ghost.y, ghost.radius * pulse, 0, Math.PI * 2);
-                ctx.fillStyle = COLORS.ghost;
+                ctx.arc(screenX, screenY, ghost.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = ghost.mode === 'chase' ? '#ff2222' : COLORS.ghost;
                 ctx.fill();
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = 'red';
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = '#ff0000';
                 ctx.fill();
                 ctx.shadowBlur = 0;
 
-                const eyeOffset = 5;
+                // Eyes
+                const eyeOffset = 6;
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
-                ctx.arc(ghost.x - eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
-                ctx.arc(ghost.x + eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
+                ctx.arc(screenX - eyeOffset, screenY - 4, 4, 0, Math.PI * 2);
+                ctx.arc(screenX + eyeOffset, screenY - 4, 4, 0, Math.PI * 2);
                 ctx.fill();
             });
         }
@@ -442,9 +418,11 @@
                     continue;
                 }
                 const alpha = 1 - age / smoke.duration;
+                const screenX = smoke.x - camera.x;
+                const screenY = smoke.y - camera.y;
                 ctx.beginPath();
-                ctx.arc(smoke.x, smoke.y, smoke.radius, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(100, 100, 100, ${alpha * 0.5})`;
+                ctx.arc(screenX, screenY, smoke.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(80, 80, 80, ${alpha * 0.6})`;
                 ctx.fill();
             }
         }
@@ -461,40 +439,44 @@
             const active = selectedItem.active;
 
             ctx.fillStyle = active ? '#00ff00' : ready ? '#ffffff' : '#888888';
-            ctx.fillText(`${name}: ${active ? '激活中' : ready ? '就绪' : '冷却中'}`, canvas.width - 30, 35);
+            ctx.fillText(`${name}: ${active ? '激活中' : ready ? '就绪' : '冷却中'}`, canvas.width - 20, 35);
 
             if (!ready && !active) {
                 ctx.fillStyle = '#888888';
-                ctx.fillText(`${(selectedItem.cooldown / 1000).toFixed(1)}s`, canvas.width - 30, 55);
+                ctx.fillText(`${(selectedItem.cooldown / 1000).toFixed(1)}s`, canvas.width - 20, 55);
             }
         }
 
         function drawInstructions() {
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = '14px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText('WASD: 移动 | 空格: 使用道具', 30, canvas.height - 20);
+            ctx.fillText('WASD: 移动 | 空格: 使用道具 | 收集20个物品后从绿色出口逃脱', 20, canvas.height - 20);
         }
 
         function drawGameOver() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.textAlign = 'center';
 
             if (gameResult === 'win') {
                 ctx.fillStyle = '#00ff00';
-                ctx.font = 'bold 48px Arial';
-                ctx.fillText('成功逃脱!', canvas.width/2, canvas.height/2 - 30);
+                ctx.font = 'bold 52px Arial';
+                ctx.fillText('成功逃脱!', canvas.width/2, canvas.height/2 - 40);
+                ctx.font = '28px Arial';
+                ctx.fillText(`收集了 ${totalCollected} 个物品`, canvas.width/2, canvas.height/2 + 10);
             } else {
                 ctx.fillStyle = '#ff0000';
-                ctx.font = 'bold 48px Arial';
-                ctx.fillText('被抓住了!', canvas.width/2, canvas.height/2 - 30);
+                ctx.font = 'bold 52px Arial';
+                ctx.fillText('被抓住了!', canvas.width/2, canvas.height/2 - 40);
+                ctx.font = '28px Arial';
+                ctx.fillText(`收集了 ${totalCollected} 个物品`, canvas.width/2, canvas.height/2 + 10);
             }
 
             ctx.fillStyle = '#ffffff';
             ctx.font = '24px Arial';
-            ctx.fillText('点击重新开始', canvas.width/2, canvas.height/2 + 30);
+            ctx.fillText('点击重新开始', canvas.width/2, canvas.height/2 + 70);
         }
 
         const ITEMS = [
@@ -503,13 +485,11 @@
             { name: '烟雾弹', desc: '3秒内干扰鬼的视线', color: '#888888' }
         ];
 
-        // Item selection layout constants
         const ITEM_START_X = 150;
         const ITEM_SPACING = 220;
         const ITEM_WIDTH = 180;
         const ITEM_HEIGHT = 200;
 
-        // Pre-calculate item click areas
         const ITEM_CLICK_AREAS = ITEMS.map((item, i) => ({
             x: ITEM_START_X + i * ITEM_SPACING,
             y: canvas.height / 2 - 60,
@@ -538,10 +518,10 @@
 
         function getItemCooldown(itemName) {
             switch(itemName) {
-                case '加速药水': return 30000;
-                case '隐身药水': return 45000;
-                case '烟雾弹': return 60000;
-                default: return 30000;
+                case '加速药水': return 25000;
+                case '隐身药水': return 40000;
+                case '烟雾弹': return 50000;
+                default: return 25000;
             }
         }
 
@@ -549,7 +529,7 @@
             smokeBombs.push({
                 x: player.x,
                 y: player.y,
-                radius: 80,
+                radius: 100,
                 duration: 3000,
                 startTime: Date.now()
             });
@@ -568,32 +548,26 @@
                 const area = ITEM_CLICK_AREAS[i];
                 const isHovered = hoveredItemIndex === i;
 
-                // Box with hover highlight
                 ctx.fillStyle = isHovered ? '#ffffff' : item.color;
                 ctx.fillRect(area.x, area.y, area.w, area.h);
 
-                // Border for hover
                 if (isHovered) {
                     ctx.strokeStyle = item.color;
                     ctx.lineWidth = 3;
                     ctx.strokeRect(area.x, area.y, area.w, area.h);
                 }
 
-                // Name
                 ctx.fillStyle = isHovered ? item.color : '#ffffff';
                 ctx.font = 'bold 20px Arial';
                 ctx.fillText(item.name, area.x + area.w/2, area.y + 50);
 
-                // Description
                 ctx.font = '14px Arial';
                 ctx.fillText(item.desc, area.x + area.w/2, area.y + 100);
             });
 
-            // Update cursor based on hover state
             canvas.style.cursor = hoveredItemIndex >= 0 ? 'pointer' : 'default';
         }
 
-        // Start menu
         function drawMenu() {
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -601,10 +575,14 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 48px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('鬼 抓 人', canvas.width/2, canvas.height/2 - 50);
+            ctx.fillText('鬼 抓 人', canvas.width/2, canvas.height/2 - 60);
+
+            ctx.font = '20px Arial';
+            ctx.fillText('收集 20 个物品，从绿色出口逃脱', canvas.width/2, canvas.height/2);
+            ctx.fillText('鬼会越来越快，越来越多！', canvas.width/2, canvas.height/2 + 30);
 
             ctx.font = '24px Arial';
-            ctx.fillText('点击开始', canvas.width/2, canvas.height/2 + 20);
+            ctx.fillText('点击开始', canvas.width/2, canvas.height/2 + 90);
         }
 
         function drawMap() {
@@ -612,20 +590,31 @@
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Show collected count
+            // Show info
             ctx.fillStyle = '#ffffff';
-            ctx.font = '20px Arial';
+            ctx.font = '18px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}  鬼: ${ghosts.length}`, 30, 35);
+            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}  鬼: ${ghosts.length}`, 20, 30);
 
             // Walls
             ctx.fillStyle = COLORS.wall;
-            walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+            walls.forEach(w => {
+                const sx = w.x - camera.x;
+                const sy = w.y - camera.y;
+                if (sx + w.w > 0 && sx < canvas.width && sy + w.h > 0 && sy < canvas.height) {
+                    ctx.fillRect(sx, sy, w.w, w.h);
+                }
+            });
 
             // Items
             items.forEach(item => {
+                const screenX = item.x - camera.x;
+                const screenY = item.y - camera.y;
+                if (screenX < -20 || screenX > canvas.width + 20 ||
+                    screenY < -20 || screenY > canvas.height + 20) return;
+
                 ctx.beginPath();
-                ctx.arc(item.x, item.y, 8, 0, Math.PI * 2);
+                ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
                 ctx.fillStyle = COLORS.item;
                 ctx.fill();
                 ctx.shadowBlur = 15;
@@ -634,25 +623,29 @@
                 ctx.shadowBlur = 0;
             });
 
-            // Exit - animated glow when active
-            if (exit.active) {
-                const pulse = 1 + Math.sin(Date.now() / 300) * 0.2;
-                ctx.beginPath();
-                ctx.arc(exit.x, exit.y, 20 * pulse, 0, Math.PI * 2);
-                ctx.fillStyle = COLORS.exitActive;
-                ctx.shadowBlur = 30;
-                ctx.shadowColor = COLORS.exitActive;
-                ctx.fill();
-                ctx.shadowBlur = 0;
-            } else {
-                ctx.beginPath();
-                ctx.arc(exit.x, exit.y, 20, 0, Math.PI * 2);
-                ctx.fillStyle = COLORS.exitInactive;
-                ctx.fill();
+            // Exit
+            const exitScreenX = exit.x - camera.x;
+            const exitScreenY = exit.y - camera.y;
+            if (exitScreenX > -50 && exitScreenX < canvas.width + 50 &&
+                exitScreenY > -50 && exitScreenY < canvas.height + 50) {
+                if (exit.active) {
+                    const pulse = 1 + Math.sin(Date.now() / 200) * 0.3;
+                    ctx.beginPath();
+                    ctx.arc(exitScreenX, exitScreenY, 30 * pulse, 0, Math.PI * 2);
+                    ctx.fillStyle = COLORS.exitActive;
+                    ctx.shadowBlur = 40;
+                    ctx.shadowColor = COLORS.exitActive;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(exitScreenX, exitScreenY, 25, 0, Math.PI * 2);
+                    ctx.fillStyle = COLORS.exitInactive;
+                    ctx.fill();
+                }
             }
         }
 
-        // Main game loop
         function gameLoop(timestamp) {
             const dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
@@ -664,6 +657,7 @@
             } else if (gameState === 'playing') {
                 updatePlayer(dt);
                 updateGhosts(dt);
+                updateCamera();
                 drawMap();
                 drawGhosts();
                 drawPlayer();
@@ -672,17 +666,15 @@
                 drawInstructions();
             } else if (gameState === 'gameover') {
                 drawMap();
-                drawPlayer();
                 drawGhosts();
+                drawPlayer();
                 drawGameOver();
             }
             requestAnimationFrame(gameLoop);
         }
 
-        // Initialize gameLoop
         gameLoop(0);
 
-        // Click handler for starting game
         canvas.addEventListener('click', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
@@ -695,7 +687,7 @@
                     if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
                         selectedItem = { ...ITEMS[i], cooldown: 0 };
                         smokeBombs = [];
-                        ghosts = [createGhost(canvas.width - 60, 60)];
+                        ghosts = [createGhost(100, 100)];
                         lastGhostSpawn = Date.now();
                         generateMap();
                         gameState = 'playing';
@@ -706,7 +698,6 @@
             }
         });
 
-        // Hover tracking for visual feedback
         canvas.addEventListener('mousemove', (e) => {
             const rect = canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
