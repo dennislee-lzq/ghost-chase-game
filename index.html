@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ghost Chase</title>
+    <title>鬼抓人</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -47,7 +47,7 @@
             x: canvas.width - 60,
             y: 60,
             radius: 15,
-            speed: 120,
+            speed: 160,
             visionRange: 200,
             visionAngle: Math.PI / 2,
             angle: 0,
@@ -383,7 +383,7 @@
             const active = selectedItem.active;
 
             ctx.fillStyle = active ? '#00ff00' : ready ? '#ffffff' : '#888888';
-            ctx.fillText(`${name}: ${active ? 'ACTIVE' : ready ? 'READY' : 'Cooldown'}`, canvas.width - 30, 35);
+            ctx.fillText(`${name}: ${active ? '激活中' : ready ? '就绪' : '冷却中'}`, canvas.width - 30, 35);
 
             if (!ready && !active) {
                 ctx.fillStyle = '#888888';
@@ -395,7 +395,7 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = '14px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText('WASD: Move | SPACE: Use Item', 30, canvas.height - 20);
+            ctx.fillText('WASD: 移动 | 空格: 使用道具', 30, canvas.height - 20);
         }
 
         function drawGameOver() {
@@ -407,22 +407,22 @@
             if (gameResult === 'win') {
                 ctx.fillStyle = '#00ff00';
                 ctx.font = 'bold 48px Arial';
-                ctx.fillText('YOU ESCAPED!', canvas.width/2, canvas.height/2 - 30);
+                ctx.fillText('成功逃脱!', canvas.width/2, canvas.height/2 - 30);
             } else {
                 ctx.fillStyle = '#ff0000';
                 ctx.font = 'bold 48px Arial';
-                ctx.fillText('CAUGHT!', canvas.width/2, canvas.height/2 - 30);
+                ctx.fillText('被抓住了!', canvas.width/2, canvas.height/2 - 30);
             }
 
             ctx.fillStyle = '#ffffff';
             ctx.font = '24px Arial';
-            ctx.fillText('Click to Play Again', canvas.width/2, canvas.height/2 + 30);
+            ctx.fillText('点击重新开始', canvas.width/2, canvas.height/2 + 30);
         }
 
         const ITEMS = [
-            { name: 'Speed Boost', desc: '2x speed for 3 seconds', color: '#00aaff' },
-            { name: 'Invisibility', desc: 'Ghost cant track you for 3 seconds', color: '#aa00ff' },
-            { name: 'Smoke Bomb', desc: 'Confuse ghost for 3 seconds', color: '#888888' }
+            { name: '加速药水', desc: '3秒内速度翻倍', color: '#00aaff' },
+            { name: '隐身药水', desc: '3秒内鬼无法追踪', color: '#aa00ff' },
+            { name: '烟雾弹', desc: '3秒内干扰鬼的视线', color: '#888888' }
         ];
 
         // Item selection layout constants
@@ -484,7 +484,7 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 36px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('Choose Your Item', canvas.width/2, 80);
+            ctx.fillText('选择你的道具', canvas.width/2, 80);
 
             ITEMS.forEach((item, i) => {
                 const area = ITEM_CLICK_AREAS[i];
@@ -523,10 +523,10 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 48px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('GHOST CHASE', canvas.width/2, canvas.height/2 - 50);
+            ctx.fillText('鬼 抓 人', canvas.width/2, canvas.height/2 - 50);
 
             ctx.font = '24px Arial';
-            ctx.fillText('Click to Start', canvas.width/2, canvas.height/2 + 20);
+            ctx.fillText('点击开始', canvas.width/2, canvas.height/2 + 20);
         }
 
         function drawMap() {
@@ -538,7 +538,7 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = '20px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(`Items: ${collectedCount}/${ITEMS_TO_WIN}`, 30, 35);
+            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}`, 30, 35);
 
             // Walls
             ctx.fillStyle = COLORS.wall;
