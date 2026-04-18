@@ -47,7 +47,22 @@
             { name: 'Smoke Bomb', desc: 'Confuse ghost for 3 seconds', color: '#888888' }
         ];
 
+        // Item selection layout constants
+        const ITEM_START_X = 150;
+        const ITEM_SPACING = 220;
+        const ITEM_WIDTH = 180;
+        const ITEM_HEIGHT = 200;
+
+        // Pre-calculate item click areas
+        const ITEM_CLICK_AREAS = ITEMS.map((item, i) => ({
+            x: ITEM_START_X + i * ITEM_SPACING,
+            y: canvas.height / 2 - 60,
+            w: ITEM_WIDTH,
+            h: ITEM_HEIGHT
+        }));
+
         let selectedItem = null;
+        let hoveredItemIndex = -1;
 
         function drawItemSelect() {
             ctx.fillStyle = COLORS.background;
@@ -59,27 +74,32 @@
             ctx.fillText('Choose Your Item', canvas.width/2, 80);
 
             ITEMS.forEach((item, i) => {
-                const x = 150 + i * 220;
-                const y = canvas.height / 2 - 60;
-                const w = 180;
-                const h = 200;
+                const area = ITEM_CLICK_AREAS[i];
+                const isHovered = hoveredItemIndex === i;
 
-                // Box
-                ctx.fillStyle = item.color;
-                ctx.fillRect(x, y, w, h);
+                // Box with hover highlight
+                ctx.fillStyle = isHovered ? '#ffffff' : item.color;
+                ctx.fillRect(area.x, area.y, area.w, area.h);
+
+                // Border for hover
+                if (isHovered) {
+                    ctx.strokeStyle = item.color;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(area.x, area.y, area.w, area.h);
+                }
 
                 // Name
-                ctx.fillStyle = '#ffffff';
+                ctx.fillStyle = isHovered ? item.color : '#ffffff';
                 ctx.font = 'bold 20px Arial';
-                ctx.fillText(item.name, x + w/2, y + 50);
+                ctx.fillText(item.name, area.x + area.w/2, area.y + 50);
 
                 // Description
                 ctx.font = '14px Arial';
-                ctx.fillText(item.desc, x + w/2, y + 100);
-
-                // Click area stored for later
-                item.clickArea = { x, y, w, h };
+                ctx.fillText(item.desc, area.x + area.w/2, area.y + 100);
             });
+
+            // Update cursor based on hover state
+            canvas.style.cursor = hoveredItemIndex >= 0 ? 'pointer' : 'default';
         }
 
         // Start menu
@@ -115,14 +135,33 @@
             if (gameState === 'menu') {
                 gameState = 'itemSelect';
             } else if (gameState === 'itemSelect') {
-                ITEMS.forEach((item, i) => {
-                    const a = item.clickArea;
-                    if (mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h) {
-                        selectedItem = { ...item, cooldown: 0 };
+                ITEM_CLICK_AREAS.forEach((area, i) => {
+                    if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
+                        selectedItem = { ...ITEMS[i], cooldown: 0 };
                         gameState = 'playing';
                     }
                 });
             }
+        });
+
+        // Hover tracking for visual feedback
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            hoveredItemIndex = -1;
+            if (gameState === 'itemSelect') {
+                ITEM_CLICK_AREAS.forEach((area, i) => {
+                    if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
+                        hoveredItemIndex = i;
+                    }
+                });
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            hoveredItemIndex = -1;
         });
 
         gameLoop();
