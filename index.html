@@ -165,6 +165,10 @@
             return false;
         }
 
+        function circleCollision(x1, y1, r1, x2, y2, r2) {
+            return Math.hypot(x2 - x1, y2 - y1) < r1 + r2;
+        }
+
         function updateCamera() {
             // Camera follows player, centered
             let targetX = player.x - canvas.width / 2;
@@ -686,7 +690,6 @@
             if (gameState === 'menu') {
                 gameState = 'itemSelect';
             } else if (gameState === 'itemSelect') {
-                let itemClicked = false;
                 for (let i = 0; i < ITEM_CLICK_AREAS.length; i++) {
                     const area = ITEM_CLICK_AREAS[i];
                     if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
@@ -697,13 +700,8 @@
                         generateMap();
                         lastTime = performance.now();
                         gameState = 'playing';
-                        itemClicked = true;
                         break;
                     }
-                }
-                if (!itemClicked) {
-                    console.log('No item clicked at', mx, my);
-                    console.log('Areas:', JSON.stringify(ITEM_CLICK_AREAS));
                 }
             } else if (gameState === 'gameover') {
                 gameState = 'menu';
