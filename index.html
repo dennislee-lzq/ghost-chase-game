@@ -647,8 +647,11 @@
         }
 
         function gameLoop(timestamp) {
-            const dt = (timestamp - lastTime) / 1000;
+            let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
+
+            // Clamp dt to prevent huge jumps (max 100ms)
+            if (dt > 0.1) dt = 0.1;
 
             if (gameState === 'menu') {
                 drawMenu();
@@ -690,6 +693,7 @@
                         ghosts = [createGhost(100, 100)];
                         lastGhostSpawn = Date.now();
                         generateMap();
+                        lastTime = performance.now();
                         gameState = 'playing';
                     }
                 });
