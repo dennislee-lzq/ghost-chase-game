@@ -43,20 +43,26 @@
             ghostVision: 'rgba(255, 100, 100, 0.2)'
         };
 
-        let ghost = {
-            x: canvas.width - 60,
-            y: 60,
-            radius: 15,
-            speed: 160,
-            visionRange: 200,
-            visionAngle: Math.PI / 2,
-            angle: 0,
-            mode: 'patrol',
-            lastTeleport: Date.now(),
-            lastRush: Date.now(),
-            rushDuration: 0,
-            patrolTarget: null
-        };
+        function createGhost(x, y) {
+            return {
+                x: x,
+                y: y,
+                radius: 15,
+                speed: 160,
+                visionRange: 200,
+                visionAngle: Math.PI / 2,
+                angle: 0,
+                mode: 'patrol',
+                lastTeleport: Date.now(),
+                lastRush: Date.now(),
+                rushDuration: 0,
+                patrolTarget: null,
+                stuckTimer: 0
+            };
+        }
+
+        let ghosts = [];
+        let lastGhostSpawn = Date.now();
 
         // Player object and input tracking
         let player = { x: 60, y: canvas.height - 60, radius: 12, speed: 150, flashTime: 0 };
@@ -161,7 +167,7 @@
                 dy *= 0.707;
             }
 
-            const speed = selectedItem && selectedItem.active && selectedItem.name === 'Speed Boost'
+            const speed = selectedItem && selectedItem.active && selectedItem.name === '加速药水'
                 ? player.speed * 2 : player.speed;
 
             let newX = player.x + dx * speed * dt;
@@ -219,69 +225,148 @@
             }
         }
 
-        function updateGhost(dt) {
-            const distToPlayer = Math.hypot(player.x - ghost.x, player.y - ghost.y);
-            const angleToPlayer = Math.atan2(player.y - ghost.y, player.x - ghost.x);
-
-            // Check if in smoke
-            let inSmoke = false;
-            for (const smoke of smokeBombs) {
-                const age = Date.now() - smoke.startTime;
-                if (age < smoke.duration && Math.hypot(player.x - smoke.x, player.y - smoke.y) < smoke.radius) {
-                    inSmoke = true;
-                    break;
-                }
+        function updateGhosts(dt) {
+            // Spawn new ghost every 30 seconds
+            if (Date.now() - lastGhostSpawn > 30000) {
+                const corner = Math.floor(Math.random() * 4);
+                let nx, ny;
+                if (corner === 0) { nx = 60; ny = 60; }
+                else if (corner === 1) { nx = canvas.width - 60; ny = 60; }
+                else if (corner === 2) { nx = 60; ny = canvas.height - 60; }
+                else { nx = canvas.width - 60; ny = canvas.height - 60; }
+                ghosts.push(createGhost(nx, ny));
+                lastGhostSpawn = Date.now();
             }
 
-            // Check invisibility
-            const isInvisible = selectedItem && selectedItem.active && selectedItem.name === 'Invisibility';
+            ghosts.forEach(ghost => {
+                const distToPlayer = Math.hypot(player.x - ghost.x, player.y - ghost.y);
+                const angleToPlayer = Math.atan2(player.y - ghost.y, player.x - ghost.x);
 
-            // Modify canSeePlayer
-            const canSeePlayer = !isInvisible && !inSmoke && distToPlayer < ghost.visionRange &&
-                Math.abs(normalizeAngle(angleToPlayer - ghost.angle)) < ghost.visionAngle / 2 &&
-                hasLineOfSight(ghost.x, ghost.y, player.x, player.y);
+                // Check if in smoke
+                let inSmoke = false;
+                for (const smoke of smokeBombs) {
+                    const age = Date.now() - smoke.startTime;
+                    if (age < smoke.duration && Math.hypot(player.x - smoke.x, player.y - smoke.y) < smoke.radius) {
+                        inSmoke = true;
+                        break;
+                    }
+                }
 
-            ghost.mode = canSeePlayer ? 'chase' : 'patrol';
+                // Check invisibility
+                const isInvisible = selectedItem && selectedItem.active && selectedItem.name === '隐身药水';
 
-            let currentSpeed = ghost.speed;
-            if (ghost.rushDuration > 0) {
-                ghost.rushDuration -= dt * 1000;
-                currentSpeed *= 1.5;
+                // Modify canSeePlayer
+                const canSeePlayer = !isInvisible && !inSmoke && distToPlayer < ghost.visionRange &&
+                    Math.abs(normalizeAngle(angleToPlayer - ghost.angle)) < ghost.visionAngle / 2 &&
+                    hasLineOfSight(ghost.x, ghost.y, player.x, player.y);
+
+                ghost.mode = canSeePlayer ? 'chase' : 'patrol';
+
+                let currentSpeed = ghost.speed;
+                if (ghost.rushDuration > 0) {
+                    ghost.rushDuration -= dt * 1000;
+                    currentSpeed *= 1.5;
+                }
+
+                if (ghost.mode === 'chase') {
+                    // Smart pathfinding - try to move toward player
+                    const moved = moveGhostSmart(ghost, angleToPlayer, currentSpeed, dt);
+                    ghost.angle = angleToPlayer;
+
+                    if (Date.now() - ghost.lastRush > 15000 && ghost.rushDuration <= 0) {
+                        ghost.rushDuration = 2000;
+                        ghost.lastRush = Date.now();
+                    }
+                } else {
+                    if (!ghost.patrolTarget || Math.hypot(ghost.patrolTarget.x - ghost.x, ghost.patrolTarget.y - ghost.y) < 10) {
+                        ghost.patrolTarget = {
+                            x: 100 + Math.random() * (canvas.width - 200),
+                            y: 100 + Math.random() * (canvas.height - 200)
+                        };
+                    }
+                    const angleToTarget = Math.atan2(ghost.patrolTarget.y - ghost.y, ghost.patrolTarget.x - ghost.x);
+                    ghost.angle = angleToTarget;
+                    moveGhostSmart(ghost, angleToTarget, currentSpeed * 0.5, dt);
+
+                    if (Date.now() - ghost.lastTeleport > 30000) {
+                        teleportGhost(ghost);
+                    }
+                }
+
+                // Check if caught player
+                if (circleCollision(player.x, player.y, player.radius, ghost.x, ghost.y, ghost.radius)) {
+                    gameState = 'gameover';
+                    gameResult = 'lose';
+                }
+            });
+        }
+
+        // Smart ghost movement that tries to navigate around walls
+        function moveGhostSmart(ghost, targetAngle, speed, dt) {
+            const dx = Math.cos(targetAngle) * speed * dt;
+            const dy = Math.sin(targetAngle) * speed * dt;
+
+            // Try direct path
+            if (!isCollidingWithWalls(ghost.x + dx, ghost.y + dy, ghost.radius)) {
+                ghost.x += dx;
+                ghost.y += dy;
+                ghost.stuckTimer = 0;
+                return true;
             }
 
-            if (ghost.mode === 'chase') {
-                const dx = Math.cos(angleToPlayer) * currentSpeed * dt;
-                const dy = Math.sin(angleToPlayer) * currentSpeed * dt;
-                moveGhostWithCollision(dx, dy);
-                ghost.angle = angleToPlayer;
-
-                if (Date.now() - ghost.lastRush > 15000 && ghost.rushDuration <= 0) {
-                    ghost.rushDuration = 2000;
-                    ghost.lastRush = Date.now();
-                }
-            } else {
-                if (!ghost.patrolTarget || Math.hypot(ghost.patrolTarget.x - ghost.x, ghost.patrolTarget.y - ghost.y) < 10) {
-                    ghost.patrolTarget = {
-                        x: 100 + Math.random() * (canvas.width - 200),
-                        y: 100 + Math.random() * (canvas.height - 200)
-                    };
-                }
-                const angleToTarget = Math.atan2(ghost.patrolTarget.y - ghost.y, ghost.patrolTarget.x - ghost.x);
-                ghost.angle = angleToTarget;
-                const dx = Math.cos(angleToTarget) * currentSpeed * 0.5 * dt;
-                const dy = Math.sin(angleToTarget) * currentSpeed * 0.5 * dt;
-                moveGhostWithCollision(dx, dy);
-
-                if (Date.now() - ghost.lastTeleport > 30000) {
-                    teleportGhost();
-                }
+            // Try sliding along walls
+            let moved = false;
+            if (!isCollidingWithWalls(ghost.x + dx, ghost.y, ghost.radius)) {
+                ghost.x += dx;
+                moved = true;
+            }
+            if (!isCollidingWithWalls(ghost.x, ghost.y + dy, ghost.radius)) {
+                ghost.y += dy;
+                moved = true;
             }
 
-            // Check if caught player
-            if (circleCollision(player.x, player.y, player.radius, ghost.x, ghost.y, ghost.radius)) {
-                gameState = 'gameover';
-                gameResult = 'lose';
+            if (moved) {
+                ghost.stuckTimer = 0;
+                return true;
             }
+
+            // Stuck - try perpendicular directions
+            ghost.stuckTimer += dt;
+            if (ghost.stuckTimer > 0.5) {
+                // Try rotating left or right to find a path
+                const perpAngle1 = targetAngle + Math.PI / 2;
+                const perpAngle2 = targetAngle - Math.PI / 2;
+                const perpDx1 = Math.cos(perpAngle1) * speed * dt;
+                const perpDy1 = Math.sin(perpAngle1) * speed * dt;
+                const perpDx2 = Math.cos(perpAngle2) * speed * dt;
+                const perpDy2 = Math.sin(perpAngle2) * speed * dt;
+
+                if (!isCollidingWithWalls(ghost.x + perpDx1, ghost.y + perpDy1, ghost.radius)) {
+                    ghost.x += perpDx1;
+                    ghost.y += perpDy1;
+                    ghost.stuckTimer = 0;
+                    return true;
+                } else if (!isCollidingWithWalls(ghost.x + perpDx2, ghost.y + perpDy2, ghost.radius)) {
+                    ghost.x += perpDx2;
+                    ghost.y += perpDy2;
+                    ghost.stuckTimer = 0;
+                    return true;
+                }
+
+                // Try going backwards slightly
+                const backAngle = targetAngle + Math.PI;
+                const backDx = Math.cos(backAngle) * speed * dt * 0.5;
+                const backDy = Math.sin(backAngle) * speed * dt * 0.5;
+                if (!isCollidingWithWalls(ghost.x + backDx, ghost.y + backDy, ghost.radius)) {
+                    ghost.x += backDx;
+                    ghost.y += backDy;
+                    ghost.stuckTimer = 0;
+                    return true;
+                }
+
+                ghost.stuckTimer = 0;
+            }
+            return false;
         }
 
         function normalizeAngle(angle) {
@@ -301,16 +386,7 @@
             return true;
         }
 
-        function moveGhostWithCollision(dx, dy) {
-            if (!isCollidingWithWalls(ghost.x + dx, ghost.y, ghost.radius)) {
-                ghost.x += dx;
-            }
-            if (!isCollidingWithWalls(ghost.x, ghost.y + dy, ghost.radius)) {
-                ghost.y += dy;
-            }
-        }
-
-        function teleportGhost() {
+        function teleportGhost(ghost) {
             const angle = Math.random() * Math.PI * 2;
             const dist = 100 + Math.random() * 100;
             let newX = player.x + Math.cos(angle) * dist;
@@ -326,32 +402,34 @@
             }
         }
 
-        function drawGhost() {
-            ctx.beginPath();
-            ctx.moveTo(ghost.x, ghost.y);
-            ctx.arc(ghost.x, ghost.y, ghost.visionRange,
-                ghost.angle - ghost.visionAngle / 2,
-                ghost.angle + ghost.visionAngle / 2);
-            ctx.closePath();
-            ctx.fillStyle = COLORS.ghostVision;
-            ctx.fill();
+        function drawGhosts() {
+            ghosts.forEach(ghost => {
+                ctx.beginPath();
+                ctx.moveTo(ghost.x, ghost.y);
+                ctx.arc(ghost.x, ghost.y, ghost.visionRange,
+                    ghost.angle - ghost.visionAngle / 2,
+                    ghost.angle + ghost.visionAngle / 2);
+                ctx.closePath();
+                ctx.fillStyle = COLORS.ghostVision;
+                ctx.fill();
 
-            const pulse = 1 + Math.sin(Date.now() / 200) * 0.1;
-            ctx.beginPath();
-            ctx.arc(ghost.x, ghost.y, ghost.radius * pulse, 0, Math.PI * 2);
-            ctx.fillStyle = COLORS.ghost;
-            ctx.fill();
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = 'red';
-            ctx.fill();
-            ctx.shadowBlur = 0;
+                const pulse = 1 + Math.sin(Date.now() / 200) * 0.1;
+                ctx.beginPath();
+                ctx.arc(ghost.x, ghost.y, ghost.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.ghost;
+                ctx.fill();
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = 'red';
+                ctx.fill();
+                ctx.shadowBlur = 0;
 
-            const eyeOffset = 5;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(ghost.x - eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
-            ctx.arc(ghost.x + eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
-            ctx.fill();
+                const eyeOffset = 5;
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(ghost.x - eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
+                ctx.arc(ghost.x + eyeOffset, ghost.y - 3, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
         }
 
         function drawSmokeBombs() {
@@ -453,16 +531,16 @@
                 selectedItem.active = false;
             }, 3000);
 
-            if (selectedItem.name === 'Smoke Bomb') {
+            if (selectedItem.name === '烟雾弹') {
                 triggerSmokeBomb();
             }
         }
 
         function getItemCooldown(itemName) {
             switch(itemName) {
-                case 'Speed Boost': return 30000;
-                case 'Invisibility': return 45000;
-                case 'Smoke Bomb': return 60000;
+                case '加速药水': return 30000;
+                case '隐身药水': return 45000;
+                case '烟雾弹': return 60000;
                 default: return 30000;
             }
         }
@@ -538,7 +616,7 @@
             ctx.fillStyle = '#ffffff';
             ctx.font = '20px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}`, 30, 35);
+            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}  鬼: ${ghosts.length}`, 30, 35);
 
             // Walls
             ctx.fillStyle = COLORS.wall;
@@ -585,9 +663,9 @@
                 drawItemSelect();
             } else if (gameState === 'playing') {
                 updatePlayer(dt);
-                updateGhost(dt);
+                updateGhosts(dt);
                 drawMap();
-                drawGhost();
+                drawGhosts();
                 drawPlayer();
                 drawSmokeBombs();
                 drawItemUI();
@@ -595,7 +673,7 @@
             } else if (gameState === 'gameover') {
                 drawMap();
                 drawPlayer();
-                drawGhost();
+                drawGhosts();
                 drawGameOver();
             }
             requestAnimationFrame(gameLoop);
@@ -617,6 +695,8 @@
                     if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
                         selectedItem = { ...ITEMS[i], cooldown: 0 };
                         smokeBombs = [];
+                        ghosts = [createGhost(canvas.width - 60, 60)];
+                        lastGhostSpawn = Date.now();
                         generateMap();
                         gameState = 'playing';
                     }
