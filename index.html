@@ -58,8 +58,8 @@
                 x: x,
                 y: y,
                 radius: 18,
-                speed: 180,
-                alertRange: 350,
+                speed: 145,
+                alertRange: 280,
                 angle: 0,
                 mode: 'patrol',
                 lastTeleport: Date.now(),
@@ -312,8 +312,8 @@
                     ghost.angle = angleToPlayer;
 
                     // Rush skill more often in chase
-                    if (Date.now() - ghost.lastRush > 8000 && ghost.rushDuration <= 0) {
-                        ghost.rushDuration = 2500;
+                    if (Date.now() - ghost.lastRush > 12000 && ghost.rushDuration <= 0) {
+                        ghost.rushDuration = 2000;
                         ghost.lastRush = Date.now();
                     }
                 } else {
@@ -331,7 +331,7 @@
                     moveGhostWithCollision(ghost, dx, dy);
 
                     // Teleport every 15 seconds in patrol
-                    if (Date.now() - ghost.lastTeleport > 15000) {
+                    if (Date.now() - ghost.lastTeleport > 20000) {
                         teleportGhostNearPlayer(ghost);
                     }
                 }
@@ -522,9 +522,9 @@
 
         function getItemCooldown(itemName) {
             switch(itemName) {
-                case '加速药水': return 25000;
-                case '隐身药水': return 40000;
-                case '烟雾弹': return 50000;
+                case '加速药水': return 15000;
+                case '隐身药水': return 25000;
+                case '烟雾弹': return 30000;
                 default: return 25000;
             }
         }
