@@ -383,6 +383,27 @@
             }
         }
 
+        function drawGameOver() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.textAlign = 'center';
+
+            if (gameResult === 'win') {
+                ctx.fillStyle = '#00ff00';
+                ctx.font = 'bold 48px Arial';
+                ctx.fillText('YOU ESCAPED!', canvas.width/2, canvas.height/2 - 30);
+            } else {
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 48px Arial';
+                ctx.fillText('CAUGHT!', canvas.width/2, canvas.height/2 - 30);
+            }
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '24px Arial';
+            ctx.fillText('Click to Play Again', canvas.width/2, canvas.height/2 + 30);
+        }
+
         const ITEMS = [
             { name: 'Speed Boost', desc: '2x speed for 3 seconds', color: '#00aaff' },
             { name: 'Invisibility', desc: 'Ghost cant track you for 3 seconds', color: '#aa00ff' },
@@ -544,6 +565,11 @@
                 drawPlayer();
                 drawSmokeBombs();
                 drawItemUI();
+            } else if (gameState === 'gameover') {
+                drawMap();
+                drawPlayer();
+                drawGhost();
+                drawGameOver();
             }
             requestAnimationFrame(gameLoop);
         }
@@ -568,6 +594,8 @@
                         gameState = 'playing';
                     }
                 });
+            } else if (gameState === 'gameover') {
+                gameState = 'menu';
             }
         });
 
