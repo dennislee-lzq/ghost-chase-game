@@ -46,7 +46,7 @@
 
         // Cooldown orb settings
         let cooldownOrbs = [];
-        const COOLDOWN_ORB_DURATION = 30000; // 30 seconds until respawn
+        const COOLDOWN_ORB_DURATION = 30000;
 
         // Throwable items
         const THROWABLE_TYPES = {
@@ -54,10 +54,119 @@
             smokeBomb: { color: '#888888', name: '烟雾弹', radius: 10, effect: 'smoke' },
             banana: { color: '#ffee00', name: '香蕉皮', radius: 10, effect: 'slip' }
         };
-        let throwableItems = []; // Items on the map to pick up
-        let playerThrowables = { grenade: 0, smokeBomb: 0, banana: 0 }; // Player's inventory
-        let spacebarHoldStart = 0;
-        let isHoldingSpace = false;
+        let throwableItems = [];
+        let playerThrowables = { grenade: 0, smokeBomb: 0, banana: 0 };
+        let isAiming = false;
+
+        // Skill system - pickup based skills
+        const SKILL_TYPES = {
+            speedBoost: { color: '#00aaff', name: '加速', key: 'b', cooldown: 15000, duration: 3000 },
+            invisibility: { color: '#aa00ff', name: '隐身', key: 'n', cooldown: 25000, duration: 3000 },
+            smokeScreen: { color: '#888888', name: '烟雾', key: 'm', cooldown: 30000, duration: 3000 }
+        };
+        let skillOrbs = []; // Skills on map to pick up (mazeEndless mode)
+        let ghostSkillOrbs = []; // Skill orbs for ghost (dualHero mode)
+        let humanSkillOrbs = []; // Skill orbs for human (dualHero mode)
+        let playerSkills = { speedBoost: null, invisibility: null, smokeScreen: null }; // Player's active skills
+        let humanSkills = { teleport: null, trap: null, summon: null }; // Human's active skills in dualHero
+        let skillCooldowns = { speedBoost: 0, invisibility: 0, smokeScreen: 0 };
+        let humanSkillCooldowns = { teleport: 0, trap: 0, summon: 0 };
+
+        // Maze Endless mode
+        let gameMode = 'adventure';  // 'adventure' | 'mazeEndless'
+        let safeZones = [];          // { x, y, radius }
+        let missileState = { active: false, crosshairX: 0, crosshairY: 0, crosshairSpeed: 400 };
+        let playerMissiles = 0;
+        let missilePickups = [];     // { x, y, radius }
+        let playerBuildBlocks = 0;
+        let buildBlockPickups = [];   // { x, y, radius } 建造方块拾取物
+        let buildBlockWalls = [];     // { x, y, w, h, expireTime } 建造的墙
+        let ghostMagnetPickups = [];   // { x, y, radius } 引鬼器拾取物
+        let playerGhostMagnets = 0;
+        let activeGhostMagnets = [];   // { x, y, startTime, duration: 5000 }
+        let mazeStartTime = 0;
+        let mazeDeathTime = 0;       // 死亡时的时间戳
+
+        // Dual Hero mode (人鬼双雄)
+        let player2 = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 360, flashTime: 0, angle: 0 };
+        const keys2 = { i: false, j: false, k: false, l: false };
+        let isPlayer1Ghost = false;  // true = P1是鬼, P2是人
+        let ghostSkills = {
+            teleport: { cooldown: 0, maxCooldown: 8000 },
+            trap: { cooldown: 0, maxCooldown: 12000 },
+            summon: { cooldown: 0, maxCooldown: 15000 }
+        };
+        let ghostTraps = [];         // { x, y } 陷阱位置
+        let summonedGhosts = [];      // 召唤的鬼
+        let dualHeroStartTime = 0;
+        const DUAL_HERO_ESCAPE_TIME = 60; // 秒后人类胜利
+        let dualHeroBeansCollected = 0;
+        let dualHeroExit = { x: 0, y: 0, active: false };
+        let dualHeroSafeZones = [];
+        let dualHeroSmokeBombs = [];
+        let dualHeroInvisibility = false;
+        let dualHeroInvisibilityTimer = 0;
+        const DUAL_HERO_INVISIBILITY_DURATION = 3000;
+        let dualHeroInvisibilityCooldown = 0;
+        const DUAL_HERO_INVISIBILITY_COOLDOWN = 15000;
+        let dualHeroMagnetTraps = [];  // { x, y, startTime, duration: 5000 }
+        let ghostTrackerActive = false; // Ghost X key tracker showing line to human
+        let ghostTrackerTimer = 0; // How long tracker has been active
+        const GHOST_TRACKER_DURATION = 8000; // 8 seconds
+        const GHOST_TRACKER_COOLDOWN = 20000; // 20 seconds cooldown
+        let ghostTrackerCooldown = 0;
+
+        // Blindfold item (human uses to blind ghost)
+        let playerBlindfolds = 0;
+        let blindfoldActive = false;
+        let blindfoldTimer = 0;
+        const BLINDFOLD_DURATION = 5000;
+        const BLINDFOLD_COOLDOWN = 15000;
+        let blindfoldCooldown = 0;
+
+        // Surveillance cameras (human places)
+        let surveillanceCameras = []; // { x, y, bullets: 10, lastShot: 0 }
+        let playerCameras = 0; // Number of camera items human has
+        let cameraModeActive = false;
+        let cameraModeTarget = null; // which camera is being viewed
+        const CAMERA_BULLET_COOLDOWN = 500; // ms between shots
+        const CAMERA_PUSH_FORCE = 300; // how much bullets push ghost back
+        const CAMERA_RANGE = 400; // max range for camera shooting
+
+        // Ghost speed boost
+        let ghostSpeedBoost = 0; // number of speed boosts ghost has
+        let ghostSpeedBoostActive = false;
+        let ghostSpeedBoostTimer = 0;
+        const GHOST_SPEED_BOOST_DURATION = 3000;
+        const GHOST_SPEED_BOOST_COOLDOWN = 15000;
+        let ghostSpeedBoostCooldown = 0;
+        let speedBoostPickups = []; // speed boost pickup items on map
+
+        // Dual Hero teleport items
+        let playerRandomTeleports = 0;  // 随机传送器数量
+        let playerTeleportBeacons = 0;  // 传送器数量
+        let playerReturnBeacons = 0;    // 传回信标数量
+        let blindfoldPickups = [];      // 蒙眼道具拾取物
+        let cameraPickups = [];         // 监控摄像头拾取物
+        let returnBeaconPos = null;     // { x, y } 传回信标位置
+        let returnBeaconUses = 0;       // 传回信标使用次数
+        const MAX_RETURN_BEACON_USES = 3;
+
+        // Teleport beacon overlay state
+        let teleportBeaconActive = false;
+        let teleportBeaconX = 0;
+        let teleportBeaconY = 0;
+        const TELEPORT_BEACON_SPEED = 400;
+
+        // Pickup items on map
+        let randomTeleportPickups = [];
+        let teleportBeaconPickups = [];
+        let returnBeaconPickups = [];
+
+        let mazeGhostsKilled = 0;
+        let mazeBeansCollected = 0;   // 豆子收集数
+        let lastMazeRespawn = 0;
+        let fogCanvas = null, fogCtx = null;
 
         // Camera
         let camera = { x: 0, y: 0 };
@@ -65,7 +174,7 @@
         // Colors
         const COLORS = {
             background: '#1a1a2e',
-            wall: '#16213e',
+            wall: '#2a3a6e',
             player: '#ffffff',
             ghost: 'rgba(255, 0, 0, 0.8)',
             item: '#ffd700',
@@ -73,7 +182,8 @@
             exitActive: '#00ff00',
             alertZone: 'rgba(255, 50, 50, 0.15)',
             cooldownOrb: '#00ffff',
-            teleportTarget: 'rgba(255, 100, 100, 0.6)'
+            teleportTarget: 'rgba(255, 100, 100, 0.6)',
+            skillOrb: '#00ffaa'
         };
 
         function createGhost(x, y) {
@@ -96,40 +206,322 @@
         let ghosts = [];
         let lastGhostSpawn = Date.now();
 
-        // Player
-        let player = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 160, flashTime: 0, angle: 0 };
+        // Player (ghost in dualHero - faster than human)
+        let player = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 360, flashTime: 0, angle: 0 };
         const keys = { w: false, a: false, s: false, d: false };
 
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
+            // Always update keys unless in build block placing mode
             if (key in keys) keys[key] = true;
-            if (e.code === 'Space' && gameState === 'playing') {
-                if (isHoldingSpace === false) {
-                    isHoldingSpace = true;
-                    spacebarHoldStart = Date.now();
+            // IJKL for player 2 (dual hero mode)
+            if (key in keys2) keys2[key] = true;
+            if (gameState === 'playing') {
+                // Dual Hero mode ghost skills
+                if (gameMode === 'dualHero') {
+                    // Ghost skills (controlled by ghost player - ALWAYS player)
+
+                    // Ghost B key - destroy camera when near one
+                    if (key === 'b') {
+                        for (let i = surveillanceCameras.length - 1; i >= 0; i--) {
+                            const cam = surveillanceCameras[i];
+                            const dist = Math.hypot(player.x - cam.x, player.y - cam.y);
+                            if (dist < 80) {
+                                // Destroy this camera
+                                surveillanceCameras.splice(i, 1);
+                                if (cameraModeTarget === i) {
+                                    cameraModeTarget = surveillanceCameras.length > 0 ? 0 : null;
+                                    if (cameraModeTarget === null) cameraModeActive = false;
+                                } else if (cameraModeTarget > i) {
+                                    cameraModeTarget--;
+                                }
+                                player.flashTime = Date.now();
+                                break;
+                            }
+                        }
+                    }
+
+                    if (key === 'u' && ghostSkills.teleport.cooldown <= 0) {
+                        // Teleport flash - teleport in facing direction
+                        const ghost = player;
+                        const teleportDist = 150;
+                        const newX = ghost.x + Math.cos(ghost.angle) * teleportDist;
+                        const newY = ghost.y + Math.sin(ghost.angle) * teleportDist;
+                        // Check if valid position (not inside wall)
+                        if (!isCollidingWithWalls(newX, newY, 24)) {
+                            ghost.x = newX;
+                            ghost.y = newY;
+                        }
+                        ghostSkills.teleport.cooldown = ghostSkills.teleport.maxCooldown;
+                        ghost.flashTime = Date.now();
+                    }
+                    // F key - speed boost
+                    if (key === 'f' && ghostSpeedBoost > 0 && ghostSpeedBoostCooldown <= 0 && !ghostSpeedBoostActive) {
+                        ghostSpeedBoost--;
+                        ghostSpeedBoostActive = true;
+                        ghostSpeedBoostTimer = GHOST_SPEED_BOOST_DURATION;
+                        ghostSpeedBoostCooldown = GHOST_SPEED_BOOST_COOLDOWN;
+                        player.flashTime = Date.now();
+                    }
+                    if (key === 'y' && ghostSkills.trap.cooldown <= 0) {
+                        // Place trap at ghost position
+                        ghostTraps.push({ x: player.x, y: player.y, radius: 30 });
+                        ghostSkills.trap.cooldown = ghostSkills.trap.maxCooldown;
+                    }
+                    if (key === 'r' && ghostSkills.summon.cooldown <= 0) {
+                        // Summon 2 ghosts that rush toward human
+                        const ghost = player;
+                        const human = player2;
+                        for (let i = 0; i < 2; i++) {
+                            const angle = (i === 0 ? -0.5 : 0.5) + Math.atan2(human.y - ghost.y, human.x - ghost.x);
+                            const sg = createGhost(ghost.x + Math.cos(angle) * 50, ghost.y + Math.sin(angle) * 50);
+                            sg.rushDuration = 3000;
+                            sg.mode = 'chase';
+                            summonedGhosts.push(sg);
+                        }
+                        ghostSkills.summon.cooldown = ghostSkills.summon.maxCooldown;
+                    }
+                    if (key === 'x' && ghostTrackerCooldown <= 0) {
+                        // Ghost tracker - activate for 8 seconds
+                        ghostTrackerActive = true;
+                        ghostTrackerTimer = GHOST_TRACKER_DURATION;
+                        ghostTrackerCooldown = GHOST_TRACKER_COOLDOWN;
+                    }
+                    if (key === 'b' && dualHeroInvisibilityCooldown <= 0 && !dualHeroInvisibility) {
+                        // Human invisibility skill
+                        dualHeroInvisibility = true;
+                        dualHeroInvisibilityTimer = DUAL_HERO_INVISIBILITY_DURATION;
+                        dualHeroInvisibilityCooldown = DUAL_HERO_INVISIBILITY_COOLDOWN;
+                        player2.flashTime = Date.now();
+                    }
+                    // N key - blindfold (makes ghost view black)
+                    if (key === 'n' && playerBlindfolds > 0 && blindfoldCooldown <= 0 && !blindfoldActive) {
+                        blindfoldActive = true;
+                        blindfoldTimer = BLINDFOLD_DURATION;
+                        blindfoldCooldown = BLINDFOLD_COOLDOWN;
+                        playerBlindfolds--;
+                    }
+                    // C key - place surveillance camera (consumes 1 camera item)
+                    if (key === 'c' && playerCameras > 0 && !cameraModeActive) {
+                        playerCameras--;
+                        // Place a new camera at human position
+                        surveillanceCameras.push({
+                            x: player2.x,
+                            y: player2.y,
+                            bullets: 10,
+                            lastShot: 0,
+                            beingDestroyed: false,
+                            lastBPress: 0,
+                            turretAngle: 0 // Turret direction
+                        });
+                    }
+                    // V key - enter camera viewing mode
+                    if (key === 'v' && surveillanceCameras.length > 0 && !cameraModeActive) {
+                        cameraModeActive = true;
+                        cameraModeTarget = 0;
+                    }
+                    // G key - random teleport
+                    if (key === 'g' && playerRandomTeleports > 0) {
+                        player2.x = 100 + Math.random() * (WORLD_WIDTH - 200);
+                        player2.y = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                        player2.flashTime = Date.now();
+                        playerRandomTeleports--;
+                    }
+                    // H key - teleport beacon (shows overlay)
+                    if (key === 'h' && playerTeleportBeacons > 0 && !teleportBeaconActive) {
+                        teleportBeaconActive = true;
+                        teleportBeaconX = player2.x;
+                        teleportBeaconY = player2.y;
+                    }
+                    // P key - place return beacon
+                    if (key === 'p' && playerReturnBeacons > 0) {
+                        returnBeaconPos = { x: player2.x, y: player2.y };
+                        returnBeaconUses = 0;
+                        playerReturnBeacons--;
+                    }
+                    // O key - return to beacon
+                    if (key === 'o' && returnBeaconPos && returnBeaconUses < MAX_RETURN_BEACON_USES) {
+                        player2.x = returnBeaconPos.x;
+                        player2.y = returnBeaconPos.y;
+                        player2.flashTime = Date.now();
+                        returnBeaconUses++;
+                        if (returnBeaconUses >= MAX_RETURN_BEACON_USES) {
+                            returnBeaconPos = null;
+                        }
+                    }
                 }
+                // Teleport beacon overlay controls (dual hero mode)
+                if (gameMode === 'dualHero' && teleportBeaconActive) {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        // Teleport human (player2) to crosshair position
+                        if (playerTeleportBeacons > 0) {
+                            player2.x = teleportBeaconX;
+                            player2.y = teleportBeaconY;
+                            player2.flashTime = Date.now();
+                            playerTeleportBeacons--;
+                        }
+                        teleportBeaconActive = false;
+                        return;
+                    }
+                    if (e.code === 'Escape') {
+                        teleportBeaconActive = false;
+                        return;
+                    }
+                    return; // Block other keys while in teleport beacon mode
+                }
+                // Camera mode controls (dual hero mode) - turret rotation handled in update loop
+                if (gameMode === 'dualHero' && cameraModeActive) {
+                    const cam = surveillanceCameras[cameraModeTarget];
+                    if (cam && e.code === 'Space') {
+                        // Space fires bullet in turret direction
+                        e.preventDefault();
+                        if (cam.bullets > 0) {
+                            const now = Date.now();
+                            if (now - cam.lastShot > CAMERA_BULLET_COOLDOWN) {
+                                cam.lastShot = now;
+                                cam.bullets--;
+                                // Bullet travels in turret direction
+                                cam.bulletDx = Math.cos(cam.turretAngle);
+                                cam.bulletDy = Math.sin(cam.turretAngle);
+                                cam.shootTime = now;
+                            }
+                        }
+                        if (cam.bullets <= 0) {
+                            // Remove camera when out of bullets
+                            surveillanceCameras.splice(cameraModeTarget, 1);
+                            cameraModeTarget = surveillanceCameras.length > 0 ? 0 : null;
+                            if (cameraModeTarget === null) {
+                                cameraModeActive = false;
+                            }
+                        }
+                    }
+                    if (e.code === 'Escape') {
+                        cameraModeActive = false;
+                        cameraModeTarget = null;
+                    }
+                    return;
+                }
+
+                // Blindfold, camera, speed boost - available in all modes
+                // N key - use blindfold (in non-dualHero, shows screen flash effect)
+                if (key === 'n' && playerBlindfolds > 0 && blindfoldCooldown <= 0 && !blindfoldActive) {
+                    blindfoldActive = true;
+                    blindfoldTimer = BLINDFOLD_DURATION;
+                    blindfoldCooldown = BLINDFOLD_COOLDOWN;
+                    playerBlindfolds--;
+                }
+                // C key - place surveillance camera (consumes 1 camera item)
+                if (key === 'c' && playerCameras > 0 && !cameraModeActive) {
+                    playerCameras--;
+                    surveillanceCameras.push({
+                        x: player.x,
+                        y: player.y,
+                        bullets: 10,
+                        lastShot: 0,
+                        beingDestroyed: false,
+                        lastBPress: 0,
+                        turretAngle: 0
+                    });
+                }
+                // V key - enter camera viewing mode
+                if (key === 'v' && surveillanceCameras.length > 0 && !cameraModeActive) {
+                    cameraModeActive = true;
+                    cameraModeTarget = 0;
+                }
+                // F key - speed boost
+                if (key === 'f' && ghostSpeedBoost > 0 && ghostSpeedBoostCooldown <= 0 && !ghostSpeedBoostActive) {
+                    ghostSpeedBoost--;
+                    ghostSpeedBoostActive = true;
+                    ghostSpeedBoostTimer = GHOST_SPEED_BOOST_DURATION;
+                    ghostSpeedBoostCooldown = GHOST_SPEED_BOOST_COOLDOWN;
+                    player.flashTime = Date.now();
+                }
+
+                // Missile system controls (maze mode)
+                if (gameMode === 'mazeEndless') {
+                    if (missileState.active) {
+                        // In missile mode, WASD controls crosshair
+                        if (e.code === 'Space') {
+                            e.preventDefault();
+                            fireMissile();
+                            return;
+                        }
+                        if (e.code === 'Escape') {
+                            missileState.active = false;
+                            return;
+                        }
+                        return; // Block other keys while in missile mode
+                    }
+                    // G key activates missile
+                    if (key === 'g' && playerMissiles > 0) {
+                        missileState.active = true;
+                        missileState.crosshairX = player.x;
+                        missileState.crosshairY = player.y;
+                        return;
+                    }
+                    // X key uses ghost magnet
+                    if (key === 'x' && playerGhostMagnets > 0) {
+                        playerGhostMagnets--;
+                        activeGhostMagnets.push({
+                            x: player.x,
+                            y: player.y,
+                            startTime: Date.now(),
+                            duration: 5000
+                        });
+                    }
+                    // H key uses build block
+                    if (key === 'h' && playerBuildBlocks > 0) {
+                        playerBuildBlocks--;
+                        // Place a wall at player position (facing direction, 60px ahead)
+                        const dist = 60;
+                        const bx = player.x + Math.cos(player.angle) * dist;
+                        const by = player.y + Math.sin(player.angle) * dist;
+                        // Check if valid position
+                        if (!isCollidingWithWalls(bx, by, 24)) {
+                            buildBlockWalls.push({
+                                x: bx - 24,
+                                y: by - 24,
+                                w: 48,
+                                h: 48,
+                                expireTime: Date.now() + 120000 // 2 minutes
+                            });
+                            player.flashTime = Date.now();
+                        } else {
+                            // Refund if couldn't place
+                            playerBuildBlocks++;
+                        }
+                    }
+                }
+                // F key toggles aiming mode
+                if (key === 'f') {
+                    isAiming = !isAiming;
+                }
+                // Space throws when aiming (and exits aiming after throw)
+                if (e.code === 'Space' && isAiming) {
+                    throwItem();
+                    isAiming = false;
+                }
+                // ESC cancels aiming
+                if (e.code === 'Escape' && isAiming) {
+                    isAiming = false;
+                }
+                // Skill hotkeys
+                if (key === 'b') useSkill('speedBoost');
+                if (key === 'n') useSkill('invisibility');
+                if (key === 'm') useSkill('smokeScreen');
             }
         });
 
         document.addEventListener('keyup', (e) => {
             const key = e.key.toLowerCase();
             if (key in keys) keys[key] = false;
-            if (e.code === 'Space' && gameState === 'playing' && isHoldingSpace) {
-                // Determine what to throw based on hold duration
-                const holdDuration = Date.now() - spacebarHoldStart;
-                if (holdDuration < 200) {
-                    // Short tap - use current item
-                    if (selectedItem) useItem();
-                } else {
-                    // Long press - throw item
-                    throwItem();
-                }
-                isHoldingSpace = false;
-            }
+            if (key in keys2) keys2[key] = false;
         });
 
         // Active effects from thrown items
         let activeEffects = [];
+        let smokeBombs = [];
 
         function throwItem() {
             // Find the first throwable item we have
@@ -147,9 +539,10 @@
 
             if (!throwType) return;
 
-            // Calculate throw direction (toward mouse or facing direction)
+            // Calculate throw direction (toward facing direction)
             const throwAngle = player.angle || 0;
-            const throwDist = 150 + Math.random() * 100;
+            // Fixed throw distances per type
+            const throwDist = throwType === 'grenade' ? 300 : (throwType === 'smokeBomb' ? 400 : 200);
             const targetX = player.x + Math.cos(throwAngle) * throwDist;
             const targetY = player.y + Math.sin(throwAngle) * throwDist;
 
@@ -159,8 +552,41 @@
                 x: targetX,
                 y: targetY,
                 startTime: Date.now(),
-                duration: throwType === 'grenade' ? 2000 : 5000
+                duration: throwType === 'grenade' ? 2000 : 5000,
+                radius: throwType === 'grenade' ? 100 : (throwType === 'smokeBomb' ? 120 : 30)
             });
+        }
+
+        function useSkill(skillType) {
+            if (gameState !== 'playing') return;
+            const skill = playerSkills[skillType];
+            if (!skill) return;
+            if (skillCooldowns[skillType] > 0) return;
+            if (skill.active) return;
+
+            // Activate skill
+            skill.active = true;
+            skillCooldowns[skillType] = SKILL_TYPES[skillType].cooldown;
+
+            // Set duration timeout
+            setTimeout(() => {
+                if (playerSkills[skillType]) {
+                    playerSkills[skillType].active = false;
+                }
+            }, SKILL_TYPES[skillType].duration);
+
+            // Smoke screen creates effect at player location
+            if (skillType === 'smokeScreen') {
+                activeEffects.push({
+                    type: 'smokeScreen',
+                    x: player.x,
+                    y: player.y,
+                    startTime: Date.now(),
+                    duration: SKILL_TYPES[skillType].duration,
+                    radius: 120,
+                    active: true
+                });
+            }
         }
 
         // Map generation
@@ -205,6 +631,16 @@
                 items.push(createRandomPosition());
             }
 
+            // Spawn new pickup items
+            blindfoldPickups = [];
+            cameraPickups = [];
+            speedBoostPickups = [];
+            for (let i = 0; i < 3; i++) {
+                blindfoldPickups.push(createRandomPosition());
+                cameraPickups.push(createRandomPosition());
+                speedBoostPickups.push(createRandomPosition());
+            }
+
             // Exit at far corner from player start
             exit = { x: WORLD_WIDTH - 100, y: WORLD_HEIGHT - 100, active: false };
 
@@ -212,6 +648,604 @@
             spawnCooldownOrbs();
             // Spawn throwable items
             spawnThrowableItems();
+            // Spawn skill orbs
+            spawnSkillOrbs();
+        }
+
+        function generateMazeMap() {
+            walls = [];
+            items = [];
+            collectedCount = 0;
+            totalCollected = 0;
+            exit.active = false;
+
+            // Border walls
+            walls.push({ x: 0, y: 0, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: WORLD_HEIGHT - 30, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: 0, w: 30, h: WORLD_HEIGHT });
+            walls.push({ x: WORLD_WIDTH - 30, y: 0, w: 30, h: WORLD_HEIGHT });
+
+            // Denser interior walls for maze
+            const numWalls = 80 + Math.floor(Math.random() * 40);
+            for (let i = 0; i < numWalls; i++) {
+                const horizontal = Math.random() > 0.5;
+                if (horizontal) {
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 300);
+                    const w = 80 + Math.random() * 200;
+                    walls.push({ x, y, w, h: 16 });
+                } else {
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 200);
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 300);
+                    const h = 80 + Math.random() * 200;
+                    walls.push({ x, y, w: 16, h });
+                }
+            }
+
+            // No exit in endless mode
+
+            // Generate items
+            for (let i = 0; i < 25; i++) {
+                items.push(createRandomPosition());
+            }
+
+            // Spawn maze-specific elements
+            spawnSafeZones();
+            spawnMissilePickups();
+            spawnBuildBlockPickups();
+            spawnGhostMagnetPickups();
+
+            // Spawn new pickup items
+            blindfoldPickups = [];
+            cameraPickups = [];
+            speedBoostPickups = [];
+            for (let i = 0; i < 3; i++) {
+                blindfoldPickups.push(createRandomPosition());
+                cameraPickups.push(createRandomPosition());
+                speedBoostPickups.push(createRandomPosition());
+            }
+
+            // Spawn cooldown orbs and throwables and skill orbs
+            spawnCooldownOrbs();
+            spawnThrowableItems();
+            spawnSkillOrbs();
+
+            // Initialize maze mode state
+            mazeStartTime = Date.now();
+            mazeDeathTime = 0;
+            mazeGhostsKilled = 0;
+            mazeBeansCollected = 0;
+            lastMazeRespawn = Date.now();
+            playerMissiles = 0;
+            missileState.active = false;
+            playerBuildBlocks = 0;
+            buildBlockWalls = [];
+            playerGhostMagnets = 0;
+            activeGhostMagnets = [];
+            missilePickups = [];
+            buildBlockPickups = [];
+            ghostMagnetPickups = [];
+
+            // Initialize fog canvas
+            fogCanvas = document.createElement('canvas');
+            fogCanvas.width = canvas.width;
+            fogCanvas.height = canvas.height;
+            fogCtx = fogCanvas.getContext('2d');
+        }
+
+        function spawnSafeZones() {
+            safeZones = [];
+            const count = 3 + Math.floor(Math.random() * 3); // 3-5 safe zones
+            for (let i = 0; i < count; i++) {
+                let attempts = 0;
+                let sz;
+                do {
+                    sz = {
+                        x: 150 + Math.random() * (WORLD_WIDTH - 300),
+                        y: 150 + Math.random() * (WORLD_HEIGHT - 300),
+                        radius: 60 + Math.random() * 20
+                    };
+                    attempts++;
+                } while (attempts < 100 && (isCollidingWithWalls(sz.x, sz.y, sz.radius) || isTooCloseToOtherSafeZone(sz)));
+
+                if (attempts < 100) {
+                    safeZones.push(sz);
+                }
+            }
+        }
+
+        function isTooCloseToOtherSafeZone(sz) {
+            for (const other of safeZones) {
+                if (Math.hypot(sz.x - other.x, sz.y - other.y) < sz.radius + other.radius + 100) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function spawnMissilePickups() {
+            missilePickups = [];
+            for (let i = 0; i < 2; i++) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                missilePickups.push({ ...pos, radius: 12 });
+            }
+        }
+
+        function spawnBuildBlockPickups() {
+            buildBlockPickups = [];
+            for (let i = 0; i < 2; i++) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                buildBlockPickups.push({ ...pos, radius: 12 });
+            }
+        }
+
+        function spawnGhostMagnetPickups() {
+            ghostMagnetPickups = [];
+            for (let i = 0; i < 2; i++) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                ghostMagnetPickups.push({ ...pos, radius: 12 });
+            }
+        }
+
+        function isPlayerInSafeZone() {
+            for (const sz of safeZones) {
+                if (Math.hypot(player.x - sz.x, player.y - sz.y) < sz.radius) return true;
+            }
+            return false;
+        }
+
+        function isInsideSafeZone(x, y, radius) {
+            for (const sz of safeZones) {
+                if (Math.hypot(x - sz.x, y - sz.y) < sz.radius + radius) return true;
+            }
+            return false;
+        }
+
+        function drawSafeZones() {
+            const now = Date.now();
+            safeZones.forEach(sz => {
+                const screenX = sz.x - camera.x;
+                const screenY = sz.y - camera.y;
+                if (screenX < -100 || screenX > canvas.width + 100 ||
+                    screenY < -100 || screenY > canvas.height + 100) return;
+
+                // Pulsing glow
+                const pulse = 0.6 + Math.sin(now / 400) * 0.15;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sz.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 220, 50, ${0.08 * pulse})`;
+                ctx.fill();
+                ctx.strokeStyle = `rgba(255, 220, 50, ${0.5 * pulse})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+
+        function drawMissilePickups() {
+            const now = Date.now();
+            missilePickups.forEach(mp => {
+                const screenX = mp.x - camera.x;
+                const screenY = mp.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, mp.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff8800';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff8800';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Inner diamond
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY - 5);
+                ctx.lineTo(screenX + 5, screenY);
+                ctx.lineTo(screenX, screenY + 5);
+                ctx.lineTo(screenX - 5, screenY);
+                ctx.closePath();
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            });
+        }
+
+        function spawnSkillOrbs() {
+            skillOrbs = [];
+            const skillTypes = ['speedBoost', 'invisibility', 'smokeScreen'];
+            for (let i = 0; i < 6; i++) {
+                const type = skillTypes[Math.floor(Math.random() * skillTypes.length)];
+                skillOrbs.push({
+                    ...createRandomPosition(),
+                    type: type,
+                    radius: 14
+                });
+            }
+        }
+
+        function updateGhostMagnets() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            for (let i = activeGhostMagnets.length - 1; i >= 0; i--) {
+                const magnet = activeGhostMagnets[i];
+                const age = now - magnet.startTime;
+                if (age > magnet.duration) {
+                    // Explode! Kill ghosts in range
+                    const blastRadius = 120;
+                    let killed = 0;
+                    for (let j = ghosts.length - 1; j >= 0; j--) {
+                        if (Math.hypot(ghosts[j].x - magnet.x, ghosts[j].y - magnet.y) < blastRadius) {
+                            ghosts.splice(j, 1);
+                            killed++;
+                        }
+                    }
+                    mazeGhostsKilled += killed;
+                    // Create explosion effect
+                    activeEffects.push({
+                        type: 'ghostMagnetExplode',
+                        x: magnet.x,
+                        y: magnet.y,
+                        startTime: now,
+                        duration: 1500,
+                        radius: blastRadius,
+                        active: true
+                    });
+                    activeGhostMagnets.splice(i, 1);
+                }
+            }
+        }
+
+        function updateBuildBlockWalls() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            for (let i = buildBlockWalls.length - 1; i >= 0; i--) {
+                if (now > buildBlockWalls[i].expireTime) {
+                    buildBlockWalls.splice(i, 1);
+                }
+            }
+        }
+
+        function drawGhostMagnetPickups() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            ghostMagnetPickups.forEach(mp => {
+                const screenX = mp.x - camera.x;
+                const screenY = mp.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                // Gray square
+                const size = mp.radius * pulse * 1.5;
+                ctx.fillStyle = '#888888';
+                ctx.fillRect(screenX - size, screenY - size, size * 2, size * 2);
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#888888';
+                ctx.fillRect(screenX - size, screenY - size, size * 2, size * 2);
+                ctx.shadowBlur = 0;
+
+                // Inner
+                ctx.fillStyle = '#cccccc';
+                const inner = size * 0.5;
+                ctx.fillRect(screenX - inner, screenY - inner, inner * 2, inner * 2);
+            });
+        }
+
+        function drawBuildBlockPickups() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            buildBlockPickups.forEach(bp => {
+                const screenX = bp.x - camera.x;
+                const screenY = bp.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                const size = bp.radius * pulse * 1.5;
+                // Purple square
+                ctx.fillStyle = '#9933ff';
+                ctx.fillRect(screenX - size, screenY - size, size * 2, size * 2);
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#9933ff';
+                ctx.fillRect(screenX - size, screenY - size, size * 2, size * 2);
+                ctx.shadowBlur = 0;
+
+                // Inner highlight
+                ctx.fillStyle = '#cc88ff';
+                const inner = size * 0.5;
+                ctx.fillRect(screenX - inner, screenY - inner, inner * 2, inner * 2);
+            });
+        }
+
+        function drawBuildBlockWalls() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            buildBlockWalls.forEach(bw => {
+                const sx = bw.x - camera.x;
+                const sy = bw.y - camera.y;
+                if (sx + bw.w > 0 && sx < canvas.width && sy + bw.h > 0 && sy < canvas.height) {
+                    const age = (bw.expireTime - now) / 120000;
+                    // Fade as it approaches expiration
+                    const alpha = 0.4 + age * 0.6;
+                    ctx.fillStyle = `rgba(120, 60, 200, ${alpha})`;
+                    ctx.fillRect(sx, sy, bw.w, bw.h);
+                    ctx.strokeStyle = `rgba(180, 100, 255, ${alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx, sy, bw.w, bw.h);
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = `rgba(150, 80, 255, ${alpha})`;
+                    ctx.strokeRect(sx, sy, bw.w, bw.h);
+                    ctx.shadowBlur = 0;
+                }
+            });
+        }
+
+        function drawActiveGhostMagnets() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+            activeGhostMagnets.forEach(magnet => {
+                const screenX = magnet.x - camera.x;
+                const screenY = magnet.y - camera.y;
+                if (screenX < -100 || screenX > canvas.width + 100 ||
+                    screenY < -100 || screenY > canvas.height + 100) return;
+
+                const age = now - magnet.startTime;
+                const progress = age / magnet.duration;
+                const pulse = 1 + Math.sin(now / 100) * 0.3;
+                const size = 16 * pulse;
+
+                // Pulsing gray square with attraction rings
+                ctx.fillStyle = '#666666';
+                ctx.fillRect(screenX - size, screenY - size, size * 2, size * 2);
+                ctx.strokeStyle = '#aaaaaa';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(screenX - size, screenY - size, size * 2, size * 2);
+
+                // Attraction range indicator
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 120 * (0.5 + progress * 0.5), 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(136, 136, 136, ${0.3 * (1 - progress)})`;
+                ctx.stroke();
+            });
+        }
+
+        function drawFogOfWar() {
+            if (gameMode !== 'mazeEndless' || !fogCtx) return;
+
+            const playerScreenX = player.x - camera.x;
+            const playerScreenY = player.y - camera.y;
+
+            // Fill fog with dark
+            fogCtx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+            fogCtx.fillRect(0, 0, fogCanvas.width, fogCanvas.height);
+
+            // Cut out sector vision
+            fogCtx.globalCompositeOperation = 'destination-out';
+
+            // Sector (fan-shaped vision) - HALF CIRCLE
+            const halfAngle = Math.PI; // 180 degrees (semicircle)
+            const visionRange = 400;
+            const startAngle = player.angle - halfAngle;
+            const endAngle = player.angle + halfAngle;
+
+            fogCtx.beginPath();
+            fogCtx.moveTo(playerScreenX, playerScreenY);
+            fogCtx.arc(playerScreenX, playerScreenY, visionRange, startAngle, endAngle);
+            fogCtx.closePath();
+            fogCtx.fillStyle = 'rgba(0, 0, 0, 1)';
+            fogCtx.fill();
+
+            // Small circle around player (self-visible)
+            fogCtx.beginPath();
+            fogCtx.arc(playerScreenX, playerScreenY, 30, 0, Math.PI * 2);
+            fogCtx.fillStyle = 'rgba(0, 0, 0, 1)';
+            fogCtx.fill();
+
+            // Safe zone glow (visible through fog)
+            safeZones.forEach(sz => {
+                const szScreenX = sz.x - camera.x;
+                const szScreenY = sz.y - camera.y;
+                fogCtx.beginPath();
+                fogCtx.arc(szScreenX, szScreenY, sz.radius * 0.5, 0, Math.PI * 2);
+                fogCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                fogCtx.fill();
+            });
+
+            // Active ghost magnets (visible through fog)
+            activeGhostMagnets.forEach(magnet => {
+                const mgScreenX = magnet.x - camera.x;
+                const mgScreenY = magnet.y - camera.y;
+                fogCtx.beginPath();
+                fogCtx.arc(mgScreenX, mgScreenY, 30, 0, Math.PI * 2);
+                fogCtx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                fogCtx.fill();
+            });
+
+            fogCtx.globalCompositeOperation = 'source-over';
+
+            // Draw fog to main canvas
+            ctx.drawImage(fogCanvas, 0, 0);
+        }
+
+        function drawMissileOverlay() {
+            if (gameMode !== 'mazeEndless' || !missileState.active) return;
+
+            const overlayW = 300, overlayH = 225;
+            const overlayX = canvas.width - overlayW - 10;
+            const overlayY = 10;
+
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(overlayX, overlayY, overlayW, overlayH);
+            ctx.strokeStyle = '#ff8800';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(overlayX, overlayY, overlayW, overlayH);
+
+            // Scale
+            const scaleX = overlayW / WORLD_WIDTH;
+            const scaleY = overlayH / WORLD_HEIGHT;
+
+            // Draw walls
+            ctx.fillStyle = '#334466';
+            walls.forEach(w => {
+                ctx.fillRect(overlayX + w.x * scaleX, overlayY + w.y * scaleY, w.w * scaleX, w.h * scaleY);
+            });
+
+            // Draw build block walls
+            buildBlockWalls.forEach(bw => {
+                ctx.fillStyle = 'rgba(120, 60, 200, 0.8)';
+                ctx.fillRect(overlayX + bw.x * scaleX, overlayY + bw.y * scaleY, bw.w * scaleX, bw.h * scaleY);
+            });
+
+            // Draw active ghost magnets
+            activeGhostMagnets.forEach(magnet => {
+                ctx.beginPath();
+                ctx.arc(overlayX + magnet.x * scaleX, overlayY + magnet.y * scaleY, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#888888';
+                ctx.fill();
+            });
+
+            // Draw safe zones
+            safeZones.forEach(sz => {
+                ctx.beginPath();
+                ctx.arc(overlayX + sz.x * scaleX, overlayY + sz.y * scaleY, sz.radius * scaleX, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 220, 50, 0.3)';
+                ctx.fill();
+            });
+
+            // Draw ghosts as red dots
+            ghosts.forEach(ghost => {
+                ctx.beginPath();
+                ctx.arc(overlayX + ghost.x * scaleX, overlayY + ghost.y * scaleY, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff0000';
+                ctx.fill();
+            });
+
+            // Draw player
+            ctx.beginPath();
+            ctx.arc(overlayX + player.x * scaleX, overlayY + player.y * scaleY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            // Crosshair
+            const chX = overlayX + missileState.crosshairX * scaleX;
+            const chY = overlayY + missileState.crosshairY * scaleY;
+
+            // Crosshair outer circle
+            ctx.beginPath();
+            ctx.arc(chX, chY, 10, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ff8800';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Crosshair inner circle
+            ctx.beginPath();
+            ctx.arc(chX, chY, 4, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ff8800';
+            ctx.stroke();
+
+            // Crosshair cross lines
+            ctx.beginPath();
+            ctx.moveTo(chX - 14, chY);
+            ctx.lineTo(chX + 14, chY);
+            ctx.moveTo(chX, chY - 14);
+            ctx.lineTo(chX, chY + 14);
+            ctx.strokeStyle = '#ff8800';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Blast radius indicator
+            const blastRadius = 80 * scaleX;
+            ctx.beginPath();
+            ctx.arc(chX, chY, blastRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 136, 0, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Label
+            ctx.fillStyle = '#ff8800';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('WASD移动准心 | 空格发射 | ESC取消', overlayX + overlayW / 2, overlayY + overlayH + 15);
+        }
+
+        function fireMissile() {
+            const blastRadius = 80;
+            let killed = 0;
+            for (let i = ghosts.length - 1; i >= 0; i--) {
+                if (Math.hypot(ghosts[i].x - missileState.crosshairX, ghosts[i].y - missileState.crosshairY) < blastRadius) {
+                    ghosts.splice(i, 1);
+                    killed++;
+                }
+            }
+            mazeGhostsKilled += killed;
+            playerMissiles--;
+
+            // Create explosion effect
+            activeEffects.push({
+                type: 'missile',
+                x: missileState.crosshairX,
+                y: missileState.crosshairY,
+                startTime: Date.now(),
+                duration: 1500,
+                radius: blastRadius,
+                active: true
+            });
+
+            missileState.active = false;
+        }
+
+        function updateSkillCooldowns(dt) {
+            for (const skillType in skillCooldowns) {
+                if (skillCooldowns[skillType] > 0) {
+                    skillCooldowns[skillType] -= dt * 1000;
+                    if (skillCooldowns[skillType] < 0) skillCooldowns[skillType] = 0;
+                }
+            }
+            // Update blindfold timer
+            if (blindfoldCooldown > 0) blindfoldCooldown -= dt * 1000;
+            if (blindfoldActive) {
+                blindfoldTimer -= dt * 1000;
+                if (blindfoldTimer <= 0) {
+                    blindfoldActive = false;
+                    blindfoldTimer = 0;
+                }
+            }
+            // Update speed boost timer
+            if (ghostSpeedBoostCooldown > 0) ghostSpeedBoostCooldown -= dt * 1000;
+            if (ghostSpeedBoostActive) {
+                ghostSpeedBoostTimer -= dt * 1000;
+                if (ghostSpeedBoostTimer <= 0) {
+                    ghostSpeedBoostActive = false;
+                    ghostSpeedBoostTimer = 0;
+                }
+            }
         }
 
         function spawnCooldownOrbs() {
@@ -252,6 +1286,18 @@
                     radius: THROWABLE_TYPES[type].radius
                 });
             }
+            // Respawn skill orbs
+            if (skillOrbs.length < 4) {
+                const skillTypes = ['speedBoost', 'invisibility', 'smokeScreen'];
+                for (let i = 0; i < 2; i++) {
+                    const type = skillTypes[Math.floor(Math.random() * skillTypes.length)];
+                    skillOrbs.push({
+                        ...createRandomPosition(),
+                        type: type,
+                        radius: 14
+                    });
+                }
+            }
         }
 
         function createRandomPosition() {
@@ -274,6 +1320,15 @@
                     return true;
                 }
             }
+            // Also check build block walls
+            if (gameMode === 'mazeEndless') {
+                for (const bw of buildBlockWalls) {
+                    if (x + radius > bw.x && x - radius < bw.x + bw.w &&
+                        y + radius > bw.y && y - radius < bw.y + bw.h) {
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -292,6 +1347,23 @@
         }
 
         function updatePlayer(dt) {
+            // Missile mode: freeze player, update crosshair and cooldowns
+            if (gameMode === 'mazeEndless' && missileState.active) {
+                updateSkillCooldowns(dt);
+                // Move crosshair with WASD
+                let cdx = 0, cdy = 0;
+                if (keys.w) cdy -= 1;
+                if (keys.s) cdy += 1;
+                if (keys.a) cdx -= 1;
+                if (keys.d) cdx += 1;
+                if (cdx !== 0 && cdy !== 0) { cdx *= 0.707; cdy *= 0.707; }
+                missileState.crosshairX += cdx * missileState.crosshairSpeed * dt;
+                missileState.crosshairY += cdy * missileState.crosshairSpeed * dt;
+                missileState.crosshairX = Math.max(30, Math.min(WORLD_WIDTH - 30, missileState.crosshairX));
+                missileState.crosshairY = Math.max(30, Math.min(WORLD_HEIGHT - 30, missileState.crosshairY));
+                return;
+            }
+
             let dx = 0, dy = 0;
             if (keys.w) dy -= 1;
             if (keys.s) dy += 1;
@@ -308,15 +1380,22 @@
                 dy *= 0.707;
             }
 
-            const speed = selectedItem && selectedItem.active && selectedItem.name === '加速药水'
-                ? player.speed * 2 : player.speed;
+            // Speed boost skill
+            let speed = player.speed;
+            if (playerSkills.speedBoost && playerSkills.speedBoost.active) {
+                speed *= 2;
+            }
+            // Ghost speed boost item
+            if (ghostSpeedBoostActive) {
+                speed *= 1.8;
+            }
 
             // Check banana slip effect
             let actualSpeed = speed;
             for (const effect of activeEffects) {
                 if (effect.type === 'banana' && effect.active) {
                     if (circleCollision(player.x, player.y, player.radius, effect.x, effect.y, 30)) {
-                        actualSpeed *= 0.3; // Slow down significantly on banana peel
+                        actualSpeed *= 0.3;
                         break;
                     }
                 }
@@ -360,15 +1439,26 @@
             cooldownOrbs.forEach(orb => {
                 if (circleCollision(player.x, player.y, player.radius, orb.x, orb.y, orb.radius)) {
                     if (now - orb.lastCollected > COOLDOWN_ORB_DURATION) {
-                        // Reduce item cooldowns by 10 seconds
-                        if (selectedItem && selectedItem.cooldown > 0) {
-                            selectedItem.cooldown = Math.max(0, selectedItem.cooldown - 10000);
+                        // Reduce all skill cooldowns by 10 seconds
+                        for (const skillType in skillCooldowns) {
+                            skillCooldowns[skillType] = Math.max(0, skillCooldowns[skillType] - 10000);
                         }
                         orb.lastCollected = now;
                         player.flashTime = now;
                     }
                 }
             });
+
+            // Check skill orb collection
+            for (let i = skillOrbs.length - 1; i >= 0; i--) {
+                const orb = skillOrbs[i];
+                if (circleCollision(player.x, player.y, player.radius, orb.x, orb.y, orb.radius)) {
+                    // Assign skill to player (overwrite if already has this skill)
+                    playerSkills[orb.type] = { active: false };
+                    skillOrbs.splice(i, 1);
+                    player.flashTime = now;
+                }
+            }
 
             // Check throwable item collection
             for (let i = throwableItems.length - 1; i >= 0; i--) {
@@ -380,29 +1470,105 @@
                 }
             }
 
+            // Check missile pickup collection (maze mode)
+            if (gameMode === 'mazeEndless') {
+                for (let i = missilePickups.length - 1; i >= 0; i--) {
+                    const mp = missilePickups[i];
+                    if (circleCollision(player.x, player.y, player.radius, mp.x, mp.y, mp.radius)) {
+                        playerMissiles++;
+                        missilePickups.splice(i, 1);
+                        player.flashTime = now;
+                    }
+                }
+                // Check build block pickup collection
+                for (let i = buildBlockPickups.length - 1; i >= 0; i--) {
+                    const bp = buildBlockPickups[i];
+                    if (circleCollision(player.x, player.y, player.radius, bp.x, bp.y, bp.radius)) {
+                        playerBuildBlocks += 5;
+                        buildBlockPickups.splice(i, 1);
+                        player.flashTime = now;
+                    }
+                }
+                // Check ghost magnet pickup collection
+                for (let i = ghostMagnetPickups.length - 1; i >= 0; i--) {
+                    const gm = ghostMagnetPickups[i];
+                    if (circleCollision(player.x, player.y, player.radius, gm.x, gm.y, gm.radius)) {
+                        playerGhostMagnets++;
+                        ghostMagnetPickups.splice(i, 1);
+                        player.flashTime = now;
+                    }
+                }
+                // Collect beans (items in maze mode are beans)
+                for (let i = items.length - 1; i >= 0; i--) {
+                    if (circleCollision(player.x, player.y, player.radius, items[i].x, items[i].y, 10)) {
+                        items.splice(i, 1);
+                        mazeBeansCollected++;
+                        player.flashTime = now;
+                        // Spawn more beans
+                        items.push(createRandomPosition());
+                    }
+                }
+
+                // Collect blindfold pickups
+                for (let i = blindfoldPickups.length - 1; i >= 0; i--) {
+                    if (circleCollision(player.x, player.y, player.radius, blindfoldPickups[i].x, blindfoldPickups[i].y, 12)) {
+                        blindfoldPickups.splice(i, 1);
+                        playerBlindfolds++;
+                        player.flashTime = now;
+                        blindfoldPickups.push(createRandomPosition());
+                    }
+                }
+
+                // Collect camera pickups (just adds to inventory, doesn't place directly)
+                for (let i = cameraPickups.length - 1; i >= 0; i--) {
+                    if (cameraPickups[i] && circleCollision(player.x, player.y, player.radius, cameraPickups[i].x, cameraPickups[i].y, 12)) {
+                        const newPos = createRandomPosition();
+                        cameraPickups.splice(i, 1);
+                        playerCameras++; // Just add to inventory
+                        player.flashTime = now;
+                        if (newPos) {
+                            cameraPickups.push(newPos);
+                        }
+                    }
+                }
+
+                // Collect speed boost pickups
+                for (let i = speedBoostPickups.length - 1; i >= 0; i--) {
+                    if (circleCollision(player.x, player.y, player.radius, speedBoostPickups[i].x, speedBoostPickups[i].y, 12)) {
+                        speedBoostPickups.splice(i, 1);
+                        ghostSpeedBoost++;
+                        player.flashTime = now;
+                        speedBoostPickups.push(createRandomPosition());
+                    }
+                }
+            }
+
             // Check exit
             if (exit.active && circleCollision(player.x, player.y, player.radius, exit.x, exit.y, 25)) {
                 gameState = 'gameover';
                 gameResult = 'win';
             }
 
-            // Update item cooldown
-            if (selectedItem && selectedItem.cooldown > 0) {
-                selectedItem.cooldown -= dt * 1000;
-                if (selectedItem.cooldown < 0) selectedItem.cooldown = 0;
-            }
+            // Update skill cooldowns
+            updateSkillCooldowns(dt);
         }
 
         function drawPlayer() {
             const screenX = player.x - camera.x;
             const screenY = player.y - camera.y;
 
+            // In dual hero mode, player is ALWAYS the ghost (red)
+            let color = COLORS.player;
+            if (gameMode === 'dualHero') {
+                color = '#ff3333';
+            }
+
             ctx.beginPath();
             ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
-            ctx.fillStyle = COLORS.player;
+            ctx.fillStyle = color;
             ctx.fill();
             ctx.shadowBlur = 25;
-            ctx.shadowColor = COLORS.player;
+            ctx.shadowColor = color;
             ctx.fill();
             ctx.shadowBlur = 0;
 
@@ -412,7 +1578,7 @@
             ctx.beginPath();
             ctx.moveTo(screenX + Math.cos(player.angle) * player.radius, screenY + Math.sin(player.angle) * player.radius);
             ctx.lineTo(dirX, dirY);
-            ctx.strokeStyle = COLORS.player;
+            ctx.strokeStyle = color;
             ctx.lineWidth = 3;
             ctx.stroke();
 
@@ -424,9 +1590,1028 @@
             }
         }
 
+        function drawPlayer2() {
+            if (gameMode !== 'dualHero') return;
+            const screenX = player2.x - camera.x;
+            const screenY = player2.y - camera.y;
+
+            // Player 2 is ALWAYS the human (white) in dualHero mode
+            const color = '#ffffff';
+
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player2.radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Direction indicator
+            const dirX = screenX + Math.cos(player2.angle) * (player2.radius + 8);
+            const dirY = screenY + Math.sin(player2.angle) * (player2.radius + 8);
+            ctx.beginPath();
+            ctx.moveTo(screenX + Math.cos(player2.angle) * player2.radius, screenY + Math.sin(player2.angle) * player2.radius);
+            ctx.lineTo(dirX, dirY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            if (player2.flashTime && Date.now() - player2.flashTime < 200) {
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, player2.radius + 12, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+                ctx.fill();
+            }
+        }
+
+        function drawGhostTraps() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            ghostTraps.forEach(trap => {
+                const sx = trap.x - camera.x;
+                const sy = trap.y - camera.y;
+                if (sx < -50 || sx > canvas.width + 50 || sy < -50 || sy > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 150) * 0.3;
+                // Trap circle
+                ctx.beginPath();
+                ctx.arc(sx, sy, trap.radius * pulse, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255, 50, 50, 0.15)';
+                ctx.fill();
+
+                // Inner pattern
+                ctx.beginPath();
+                ctx.arc(sx, sy, trap.radius * 0.5 * pulse, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
+                ctx.stroke();
+            });
+        }
+
+        function drawGhostTracker() {
+            if (gameMode !== 'dualHero' || !ghostTrackerActive) return;
+            const now = Date.now();
+
+            // Draw line from ghost to human
+            const ghostScreenX = player.x - camera.x;
+            const ghostScreenY = player.y - camera.y;
+            const humanScreenX = player2.x - camera.x;
+            const humanScreenY = player2.y - camera.y;
+
+            // Pulsing line
+            const pulse = 0.5 + Math.sin(now / 100) * 0.3;
+
+            // Draw dashed line
+            ctx.beginPath();
+            ctx.setLineDash([10, 5]);
+            ctx.moveTo(ghostScreenX, ghostScreenY);
+            ctx.lineTo(humanScreenX, humanScreenY);
+            ctx.strokeStyle = `rgba(255, 0, 255, ${pulse})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw target circle on human
+            ctx.beginPath();
+            ctx.arc(humanScreenX, humanScreenY, 20 + pulse * 5, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255, 0, 255, ${pulse})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = `rgba(255, 0, 255, ${pulse})`;
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('人', humanScreenX, humanScreenY - 30);
+        }
+
+        function drawDualHeroUI(isLeftSide, ghost, human) {
+            if (gameMode !== 'dualHero') return;
+
+            const survivalSec = (Date.now() - dualHeroStartTime) / 1000;
+            const remaining = Math.max(0, DUAL_HERO_ESCAPE_TIME - survivalSec);
+
+            // X offset for split screen
+            const xOffset = isLeftSide ? 0 : canvas.width / 2;
+            const maxX = canvas.width / 2;
+
+            // Show roles label
+            ctx.textAlign = 'center';
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(isLeftSide ? '鬼视角' : '人视角', xOffset + maxX / 2, 20);
+
+            if (isLeftSide) {
+                // Ghost view - show ghost skills
+                ctx.textAlign = 'right';
+                ctx.font = '14px Arial';
+                ctx.fillStyle = remaining > 0 ? '#00ff00' : '#ffd700';
+                ctx.fillText(`倒计时: ${remaining.toFixed(1)}秒`, xOffset + maxX - 10, 30);
+
+                // Ghost controls - ALWAYS WASD
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText('鬼控制: WASD', xOffset + maxX - 10, 50);
+
+                // Teleport skill (U)
+                const tCd = ghostSkills.teleport.cooldown;
+                ctx.fillStyle = tCd <= 0 ? '#00ffff' : '#555555';
+                ctx.fillText(`闪现[U]: ${tCd <= 0 ? '就绪' : (tCd/1000).toFixed(1)+'秒'}`, xOffset + maxX - 10, 75);
+
+                // Trap skill (Y)
+                const trCd = ghostSkills.trap.cooldown;
+                ctx.fillStyle = trCd <= 0 ? '#ff6666' : '#555555';
+                ctx.fillText(`陷阱[Y]: ${trCd <= 0 ? '就绪' : (trCd/1000).toFixed(1)+'秒'}`, xOffset + maxX - 10, 95);
+
+                // Summon skill (O)
+                const sCd = ghostSkills.summon.cooldown;
+                ctx.fillStyle = sCd <= 0 ? '#ff00ff' : '#555555';
+                ctx.fillText(`召唤[R]: ${sCd <= 0 ? '就绪' : (sCd/1000).toFixed(1)+'秒'}`, xOffset + maxX - 10, 115);
+
+                // Magnet trap (X)
+                ctx.fillStyle = '#888888';
+                ctx.fillText(`追踪[X]: ${ghostTrackerActive ? (ghostTrackerTimer/1000).toFixed(1)+'秒' : ghostTrackerCooldown > 0 ? (ghostTrackerCooldown/1000).toFixed(1)+'秒' : '就绪'}`, xOffset + maxX - 10, 135);
+
+                // Speed boost (F)
+                ctx.fillStyle = ghostSpeedBoost > 0 ? '#00aaff' : '#555555';
+                ctx.fillText(`加速[F]: ${ghostSpeedBoostActive ? (ghostSpeedBoostTimer/1000).toFixed(1)+'秒' : ghostSpeedBoost > 0 ? ghostSpeedBoost + '个' : (ghostSpeedBoostCooldown > 0 ? (ghostSpeedBoostCooldown/1000).toFixed(1)+'秒' : '无')}`, xOffset + maxX - 10, 155);
+            } else {
+                // Human view - show human info
+                ctx.textAlign = 'left';
+                ctx.font = '14px Arial';
+
+                // Human controls - ALWAYS IJKL
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText('人控制: IJKL', xOffset + 10, 30);
+
+                // Bean collection progress
+                ctx.fillStyle = dualHeroExit.active ? '#00ff00' : '#ffd700';
+                ctx.fillText(`豆子: ${dualHeroBeansCollected}/30`, xOffset + 10, 50);
+
+                if (dualHeroExit.active) {
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillText('门已开启!', xOffset + 10, 70);
+                }
+
+                // Invisibility status
+                if (dualHeroInvisibility) {
+                    ctx.fillStyle = '#aa00ff';
+                    ctx.fillText(`隐身: ${(dualHeroInvisibilityTimer/1000).toFixed(1)}秒`, xOffset + 10, 90);
+                }
+
+                // Invisibility cooldown (B)
+                ctx.fillStyle = dualHeroInvisibilityCooldown <= 0 ? '#aa00ff' : '#555555';
+                ctx.fillText(`隐身[B]: ${dualHeroInvisibilityCooldown <= 0 ? '就绪' : (dualHeroInvisibilityCooldown/1000).toFixed(1)+'秒'}`, xOffset + 10, 110);
+
+                // Teleport items
+                ctx.font = '12px Arial';
+                ctx.fillStyle = playerRandomTeleports > 0 ? '#00ffff' : '#555555';
+                ctx.fillText(`随机传送[G]: ${playerRandomTeleports}`, xOffset + 10, 135);
+
+                ctx.fillStyle = playerTeleportBeacons > 0 ? '#ff00ff' : '#555555';
+                ctx.fillText(`传送器[H]: ${playerTeleportBeacons}`, xOffset + 10, 155);
+
+                ctx.fillStyle = playerReturnBeacons > 0 ? '#ffff00' : '#555555';
+                ctx.fillText(`信标[P/O]: ${playerReturnBeacons}`, xOffset + 10, 175);
+
+                if (returnBeaconPos) {
+                    ctx.fillStyle = '#ffff00';
+                    ctx.fillText(`信标剩余: ${MAX_RETURN_BEACON_USES - returnBeaconUses}次`, xOffset + 10, 195);
+                }
+
+                // Blindfold item (N)
+                ctx.fillStyle = playerBlindfolds > 0 ? '#ff6600' : '#555555';
+                ctx.fillText(`蒙眼[N]: ${playerBlindfolds} ${blindfoldActive ? '(' + (blindfoldTimer/1000).toFixed(1) + '秒)' : ''}`, xOffset + 10, 215);
+
+                // Surveillance camera (C/V)
+                ctx.fillStyle = surveillanceCameras.length > 0 ? '#00ff00' : '#555555';
+                ctx.fillText(`监控[C/V]: ${playerCameras}个 ${surveillanceCameras.length}已放 ${cameraModeActive ? '[观看中]' : ''}`, xOffset + 10, 235);
+            }
+        }
+
+        function drawSummonedGhosts() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            summonedGhosts.forEach(sg => {
+                const screenX = sg.x - camera.x;
+                const screenY = sg.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                // Alert zone
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sg.alertRange, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+                ctx.fill();
+
+                // Ghost body
+                const pulse = 1 + Math.sin(now / 150) * 0.15;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sg.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff00ff';
+                ctx.fill();
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff00ff';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Eyes
+                const eyeOffset = 6;
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(screenX - eyeOffset, screenY - 4, 4, 0, Math.PI * 2);
+                ctx.arc(screenX + eyeOffset, screenY - 4, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawDualHeroSafeZones() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            dualHeroSafeZones.forEach(sz => {
+                const screenX = sz.x - camera.x;
+                const screenY = sz.y - camera.y;
+                if (screenX < -100 || screenX > canvas.width + 100 || screenY < -100 || screenY > canvas.height + 100) return;
+
+                // Pulsing glow effect
+                const pulse = 1 + Math.sin(now / 300) * 0.1;
+
+                // Outer glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sz.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 100, 0.15)';
+                ctx.fill();
+
+                // Inner fill
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sz.radius * pulse - 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 100, 0.25)';
+                ctx.fill();
+
+                // Border
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, sz.radius * pulse, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 255, 100, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = 'rgba(255, 255, 100, 0.5)';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('安全区', screenX, screenY + sz.radius + 15);
+            });
+        }
+
+        function drawDualHeroMagnetTraps() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            dualHeroMagnetTraps.forEach(magnet => {
+                const screenX = magnet.x - camera.x;
+                const screenY = magnet.y - camera.y;
+                if (screenX < -100 || screenX > canvas.width + 100 || screenY < -100 || screenY > canvas.height + 100) return;
+
+                const elapsed = Date.now() - magnet.startTime;
+                const remaining = magnet.duration - elapsed;
+                const progress = elapsed / magnet.duration;
+
+                // Attraction range indicator
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 500, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(128, 128, 128, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Magnet trap circle
+                const pulse = 1 + Math.sin(now / 100) * 0.2;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(128, 128, 128, ${0.8 - progress * 0.5})`;
+                ctx.fill();
+                ctx.strokeStyle = '#888888';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Timer ring
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 25, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255, ${remaining < 1000 ? '0' : '200'}, ${remaining < 1000 ? '0' : '100'}, 0.8)`;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Attraction lines
+                const human = player2;
+                const ghost = player;
+                for (const target of [ghost, human]) {
+                    const tx = target.x - camera.x;
+                    const ty = target.y - camera.y;
+                    ctx.beginPath();
+                    ctx.moveTo(screenX, screenY);
+                    ctx.lineTo(tx, ty);
+                    ctx.strokeStyle = 'rgba(200, 200, 200, 0.2)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            });
+        }
+
+        function drawDualHeroExit() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            const screenX = dualHeroExit.x - camera.x;
+            const screenY = dualHeroExit.y - camera.y;
+            if (screenX < -100 || screenX > canvas.width + 100 || screenY < -100 || screenY > canvas.height + 100) return;
+
+            const active = dualHeroExit.active;
+            const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+            // Glow effect
+            if (active) {
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 50 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+                ctx.fill();
+            }
+
+            // Exit door
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 30, 0, Math.PI * 2);
+            ctx.fillStyle = active ? '#00ff00' : '#555555';
+            ctx.fill();
+            ctx.strokeStyle = active ? '#ffffff' : '#888888';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Door icon
+            ctx.fillStyle = active ? '#ffffff' : '#888888';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(active ? '门' : '门', screenX, screenY + 5);
+
+            // Label
+            ctx.font = '12px Arial';
+            ctx.fillStyle = active ? '#00ff00' : '#888888';
+            ctx.fillText(active ? '撤离点!' : `需要${30 - dualHeroBeansCollected}豆`, screenX, screenY + 50);
+        }
+
+        function drawRandomTeleportPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            randomTeleportPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ffff';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Question mark icon
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('?', screenX, screenY + 5);
+            });
+        }
+
+        function drawTeleportBeaconPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            teleportBeaconPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 0, 255, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff00ff';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Target icon
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(screenX - 8, screenY);
+                ctx.lineTo(screenX + 8, screenY);
+                ctx.moveTo(screenX, screenY - 8);
+                ctx.lineTo(screenX, screenY + 8);
+                ctx.stroke();
+            });
+        }
+
+        function drawReturnBeaconPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            returnBeaconPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffff00';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Home icon
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('O', screenX, screenY + 4);
+            });
+        }
+
+        // Draw blindfold pickups
+        function drawBlindfoldPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            blindfoldPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 102, 0, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff6600';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('N', screenX, screenY + 4);
+            });
+        }
+
+        // Draw camera pickups
+        function drawCameraPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            cameraPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ff00';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('C', screenX, screenY + 4);
+            });
+        }
+
+        // Draw speed boost pickups (for ghost)
+        function drawSpeedBoostPickups() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+            speedBoostPickups.forEach(pickup => {
+                const screenX = pickup.x - camera.x;
+                const screenY = pickup.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.15;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 20 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 170, 255, 0.3)';
+                ctx.fill();
+
+                // Item
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#00aaff';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('F', screenX, screenY + 4);
+            });
+        }
+
+        function drawReturnBeaconMarker() {
+            if (gameMode !== 'dualHero' || !returnBeaconPos) return;
+            const screenX = returnBeaconPos.x - camera.x;
+            const screenY = returnBeaconPos.y - camera.y;
+            if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) return;
+
+            const now = Date.now();
+            const pulse = 1 + Math.sin(now / 150) * 0.2;
+
+            // Pulsing beacon
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 25 * pulse, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 15, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffff00';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Remaining uses
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${MAX_RETURN_BEACON_USES - returnBeaconUses}`, screenX, screenY + 4);
+        }
+
+        // Draw surveillance cameras
+        function drawSurveillanceCameras() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+
+            surveillanceCameras.forEach((cam, idx) => {
+                const screenX = cam.x - camera.x;
+                const screenY = cam.y - camera.y;
+                if (screenX < -100 || screenX > canvas.width + 100 || screenY < -100 || screenY > canvas.height + 100) return;
+
+                const pulse = 1 + Math.sin(now / 300) * 0.15;
+                const isActive = cameraModeTarget === idx;
+
+                // Camera body
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 25 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = isActive ? 'rgba(0, 255, 0, 0.5)' : 'rgba(100, 100, 100, 0.5)';
+                ctx.fill();
+                ctx.strokeStyle = isActive ? '#00ff00' : '#666666';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Camera lens
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
+                ctx.fillStyle = isActive ? '#00ff00' : '#888888';
+                ctx.fill();
+
+                // Turret direction indicator
+                if (cam.turretAngle !== undefined) {
+                    const turretLen = 35;
+                    const turretEndX = screenX + Math.cos(cam.turretAngle) * turretLen;
+                    const turretEndY = screenY + Math.sin(cam.turretAngle) * turretLen;
+                    ctx.beginPath();
+                    ctx.moveTo(screenX, screenY);
+                    ctx.lineTo(turretEndX, turretEndY);
+                    ctx.strokeStyle = isActive ? '#00ff00' : '#888888';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                    // Turret tip
+                    ctx.beginPath();
+                    ctx.arc(turretEndX, turretEndY, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = isActive ? '#00ff00' : '#888888';
+                    ctx.fill();
+                }
+
+                // Bullet count
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${cam.bullets}`, screenX, screenY + 4);
+            });
+        }
+
+        // Draw surveillance camera bullets (visible to both ghost and human)
+        function drawSurveillanceBullets() {
+            if (gameMode !== 'dualHero') return;
+            const now = Date.now();
+
+            surveillanceCameras.forEach(cam => {
+                // Draw bullets from this camera
+                if (cam.shootTime && now - cam.shootTime < 2000) {
+                    const bulletSpeed = 500;
+                    const maxDist = bulletSpeed * (now - cam.shootTime) / 1000;
+
+                    // Calculate bullet position with wall reflection
+                    let bulletX = cam.x;
+                    let bulletY = cam.y;
+                    let dx = cam.bulletDx;
+                    let dy = cam.bulletDy;
+                    let remainingDist = maxDist;
+
+                    for (let bounce = 0; bounce < 5 && remainingDist > 0; bounce++) {
+                        let nearestDist = remainingDist;
+                        let hitWall = null;
+                        let hitPoint = null;
+
+                        for (const w of walls) {
+                            const wallLines = [
+                                { x1: w.x, y1: w.y, x2: w.x + w.w, y2: w.y, normal: { x: 0, y: -1 } },
+                                { x1: w.x, y1: w.y + w.h, x2: w.x + w.w, y2: w.y + w.h, normal: { x: 0, y: 1 } },
+                                { x1: w.x, y1: w.y, x2: w.x, y2: w.y + w.h, normal: { x: -1, y: 0 } },
+                                { x1: w.x + w.w, y1: w.y, x2: w.x + w.w, y2: w.y + w.h, normal: { x: 1, y: 0 } }
+                            ];
+
+                            for (const wall of wallLines) {
+                                const denom = dx * wall.normal.x + dy * wall.normal.y;
+                                if (Math.abs(denom) < 0.001) continue;
+
+                                const t = ((wall.x1 - bulletX) * wall.normal.x + (wall.y1 - bulletY) * wall.normal.y) / denom;
+                                if (t <= 0 || t >= nearestDist) continue;
+
+                                const hitX = bulletX + dx * t;
+                                const hitY = bulletY + dy * t;
+
+                                if (hitX >= Math.min(wall.x1, wall.x2) - 1 && hitX <= Math.max(wall.x1, wall.x2) + 1 &&
+                                    hitY >= Math.min(wall.y1, wall.y2) - 1 && hitY <= Math.max(wall.y1, wall.y2) + 1) {
+                                    nearestDist = t;
+                                    hitWall = wall;
+                                    hitPoint = { x: hitX, y: hitY };
+                                }
+                            }
+                        }
+
+                        if (hitWall && hitPoint) {
+                            bulletX = hitPoint.x;
+                            bulletY = hitPoint.y;
+                            remainingDist -= nearestDist;
+                            const dot = dx * hitWall.normal.x + dy * hitWall.normal.y;
+                            dx = dx - 2 * dot * hitWall.normal.x;
+                            dy = dy - 2 * dot * hitWall.normal.y;
+                        } else {
+                            bulletX += dx * remainingDist;
+                            bulletY += dy * remainingDist;
+                            remainingDist = 0;
+                        }
+                    }
+
+                    // Draw bullet on screen
+                    const screenX = bulletX - camera.x;
+                    const screenY = bulletY - camera.y;
+                    if (screenX >= -50 && screenX <= canvas.width + 50 &&
+                        screenY >= -50 && screenY <= canvas.height + 50) {
+                        ctx.beginPath();
+                        ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
+                        ctx.fillStyle = '#ffff00';
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = '#ffff00';
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                    }
+                }
+            });
+        }
+
+        // Draw camera mode overlay (top-right corner showing camera view)
+        // Draw blindfold overlay - makes ghost view black when active
+        function drawBlindfoldOverlay() {
+            if (!blindfoldActive) return;
+
+            if (gameMode === 'dualHero') {
+                // Fill left viewport (ghost view) with black
+                const halfW = canvas.width / 2;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+                ctx.fillRect(0, 0, halfW, canvas.height);
+
+                // Show timer text
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('视野被遮挡!', halfW / 2, canvas.height / 2 - 20);
+                ctx.font = '16px Arial';
+                ctx.fillText(`${(blindfoldTimer / 1000).toFixed(1)}秒`, halfW / 2, canvas.height / 2 + 20);
+            } else {
+                // In other modes, show a red screen flash effect
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Show timer text
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('使用蒙眼!', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = '16px Arial';
+                ctx.fillText(`${(blindfoldTimer / 1000).toFixed(1)}秒`, canvas.width / 2, canvas.height / 2 + 20);
+            }
+        }
+
+        function drawCameraModeOverlay() {
+            if (!cameraModeActive || cameraModeTarget === null) return;
+
+            const cam = surveillanceCameras[cameraModeTarget];
+            if (!cam) return;
+
+            const mapW = 250;
+            const mapH = 188;
+            const mapX = canvas.width - mapW - 10;
+            const mapY = 10;
+
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(mapX, mapY, mapW, mapH);
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+            // Label
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('监控画面', mapX + mapW/2, mapY + 15);
+
+            // Scale
+            const scaleX = mapW / 600;
+            const scaleY = (mapH - 25) / 450;
+
+            // Draw walls in camera view
+            ctx.fillStyle = '#2a3a6e';
+            walls.forEach(w => {
+                ctx.fillRect(mapX + w.x * scaleX, mapY + 25 + w.y * scaleY, w.w * scaleX, w.h * scaleY);
+            });
+
+            // Draw safe zones (only in dualHero mode)
+            if (gameMode === 'dualHero') {
+                ctx.fillStyle = 'rgba(255, 255, 100, 0.3)';
+                dualHeroSafeZones.forEach(sz => {
+                    ctx.beginPath();
+                    ctx.arc(mapX + sz.x * scaleX, mapY + 25 + sz.y * scaleY, sz.radius * scaleX, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                // Draw ghost (red dot)
+                ctx.beginPath();
+                ctx.arc(mapX + ghost.x * scaleX, mapY + 25 + ghost.y * scaleY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff3333';
+                ctx.fill();
+
+                // Draw human (white dot)
+                ctx.beginPath();
+                ctx.arc(mapX + player2.x * scaleX, mapY + 25 + player2.y * scaleY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            } else {
+                // In non-dualHero modes, just show player position
+                ctx.beginPath();
+                ctx.arc(mapX + player.x * scaleX, mapY + 25 + player.y * scaleY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            }
+
+            // Camera position marker
+            ctx.beginPath();
+            ctx.arc(mapX + cam.x * scaleX, mapY + 25 + cam.y * scaleY, 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Controls hint
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`子弹: ${cam.bullets}`, mapX + 5, mapY + mapH - 5);
+            ctx.textAlign = 'right';
+            ctx.fillText('ESC退出', mapX + mapW - 5, mapY + 15);
+        }
+
+        // Draw full camera view on right half when in camera mode
+        // Shows the same view as human normally sees, with turret overlay
+        function drawCameraViewFullscreen() {
+            if (!cameraModeActive || cameraModeTarget === null) return;
+
+            const cam = surveillanceCameras[cameraModeTarget];
+            if (!cam) return;
+
+            const halfW = canvas.width / 2;
+            const now = Date.now();
+
+            // Draw the normal human view (centered on human position)
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(halfW, 0, halfW, canvas.height);
+            ctx.clip();
+
+            // Human centered in right half (use player2 directly)
+            const humanCamX = player2.x - (halfW + halfW / 2);
+            const humanCamY = player2.y - canvas.height / 2;
+            camera = {
+                x: Math.max(0, Math.min(WORLD_WIDTH - halfW, humanCamX)),
+                y: Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, humanCamY))
+            };
+
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(halfW, 0, halfW, canvas.height);
+            drawMap();
+            drawDualHeroSafeZones();
+            drawDualHeroMagnetTraps();
+            drawDualHeroExit();
+            drawGhostTraps();
+            drawSurveillanceCameras();
+            drawSurveillanceBullets();
+            drawSummonedGhosts();
+            drawPlayer();
+            drawPlayer2();
+            drawRandomTeleportPickups();
+            drawCooldownOrbs();
+            drawThrowableItems();
+
+            // Draw human health bar at top of screen
+            if (player2.hp !== undefined) {
+                const barWidth = 150;
+                const barHeight = 12;
+                const barX = halfW + halfW / 2 - barWidth / 2;
+                const barY = 10;
+                ctx.fillStyle = '#333';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(barX, barY, barWidth * (player2.hp / player2.maxHp), barHeight);
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(barX, barY, barWidth, barHeight);
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${player2.hp}/${player2.maxHp}`, barX + barWidth / 2, barY + barHeight - 2);
+            }
+
+            ctx.restore();
+
+            // UI bar at top
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(halfW, 0, halfW, 30);
+
+            // Title
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('监控模式 [V退出]', halfW + halfW / 2, 20);
+
+            // Bullet count
+            ctx.textAlign = 'left';
+            ctx.fillStyle = cam.bullets > 0 ? '#00ff00' : '#ff0000';
+            ctx.font = '12px Arial';
+            ctx.fillText(`子弹: ${cam.bullets}`, halfW + 10, 20);
+        }
+
+        function drawTeleportBeaconOverlay() {
+            if (gameMode !== 'dualHero' || !teleportBeaconActive) return;
+
+            const now = Date.now();
+
+            // Draw minimap in top-right corner
+            const mapW = 300;
+            const mapH = 225;
+            const mapX = canvas.width - mapW - 10;
+            const mapY = 10;
+
+            // Map background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(mapX, mapY, mapW, mapH);
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+            // Scale factors
+            const scaleX = mapW / WORLD_WIDTH;
+            const scaleY = mapH / WORLD_HEIGHT;
+
+            // Draw walls
+            ctx.fillStyle = '#2a3a6e';
+            walls.forEach(w => {
+                ctx.fillRect(mapX + w.x * scaleX, mapY + w.y * scaleY, w.w * scaleX, w.h * scaleY);
+            });
+
+            // Draw safe zones
+            ctx.fillStyle = 'rgba(255, 255, 100, 0.5)';
+            dualHeroSafeZones.forEach(sz => {
+                ctx.beginPath();
+                ctx.arc(mapX + sz.x * scaleX, mapY + sz.y * scaleY, sz.radius * scaleX, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw exit
+            if (dualHeroExit.active) {
+                ctx.fillStyle = '#00ff00';
+                ctx.beginPath();
+                ctx.arc(mapX + dualHeroExit.x * scaleX, mapY + dualHeroExit.y * scaleY, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw return beacon
+            if (returnBeaconPos) {
+                ctx.fillStyle = '#ffff00';
+                ctx.beginPath();
+                ctx.arc(mapX + returnBeaconPos.x * scaleX, mapY + returnBeaconPos.y * scaleY, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw crosshair/target position
+            const crosshairMapX = mapX + teleportBeaconX * scaleX;
+            const crosshairMapY = mapY + teleportBeaconY * scaleY;
+
+            // Crosshair glow
+            ctx.beginPath();
+            ctx.arc(crosshairMapX, crosshairMapY, 15, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 0, 255, 0.3)';
+            ctx.fill();
+
+            // Crosshair
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(crosshairMapX, crosshairMapY, 8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(crosshairMapX - 12, crosshairMapY);
+            ctx.lineTo(crosshairMapX + 12, crosshairMapY);
+            ctx.moveTo(crosshairMapX, crosshairMapY - 12);
+            ctx.lineTo(crosshairMapX, crosshairMapY + 12);
+            ctx.stroke();
+
+            // Title
+            ctx.fillStyle = '#ff00ff';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('选择传送位置', mapX + mapW / 2, mapY - 5);
+
+            // Instructions
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('WASD移动 | 空格传送 | ESC取消', mapX + 5, mapY + mapH + 15);
+        }
+
         function updateGhosts(dt) {
-            // Spawn new ghost every 20 seconds, max 3 ghosts
-            if (Date.now() - lastGhostSpawn > 20000 && ghosts.length < 3) {
+            // Spawn parameters differ by mode
+            const maxGhosts = gameMode === 'mazeEndless' ? 6 : 3;
+            const spawnInterval = gameMode === 'mazeEndless' ? 15000 : 20000;
+
+            // Spawn new ghost
+            if (Date.now() - lastGhostSpawn > spawnInterval && ghosts.length < maxGhosts) {
                 const corners = [
                     { x: 100, y: 100 },
                     { x: WORLD_WIDTH - 100, y: 100 },
@@ -434,7 +2619,20 @@
                     { x: WORLD_WIDTH - 100, y: WORLD_HEIGHT - 100 }
                 ];
                 const corner = corners[Math.floor(Math.random() * corners.length)];
-                ghosts.push(createGhost(corner.x, corner.y));
+                // In maze mode, avoid spawning in safe zones
+                if (gameMode === 'mazeEndless' && isInsideSafeZone(corner.x, corner.y, 18)) {
+                    // Try random position instead
+                    let attempts = 0;
+                    let spawnX, spawnY;
+                    do {
+                        spawnX = 100 + Math.random() * (WORLD_WIDTH - 200);
+                        spawnY = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                        attempts++;
+                    } while (attempts < 50 && (isInsideSafeZone(spawnX, spawnY, 18) || isCollidingWithWalls(spawnX, spawnY, 18)));
+                    ghosts.push(createGhost(spawnX, spawnY));
+                } else {
+                    ghosts.push(createGhost(corner.x, corner.y));
+                }
                 lastGhostSpawn = Date.now();
             }
 
@@ -442,24 +2640,58 @@
                 const distToPlayer = Math.hypot(player.x - ghost.x, player.y - ghost.y);
                 const angleToPlayer = Math.atan2(player.y - ghost.y, player.x - ghost.x);
 
-                // Check if in smoke
+                // Check if in smoke (from thrown smoke bombs or smokeScreen skill)
                 let inSmoke = false;
-                for (const smoke of smokeBombs) {
-                    const age = Date.now() - smoke.startTime;
-                    if (age < smoke.duration && Math.hypot(player.x - smoke.x, player.y - smoke.y) < smoke.radius) {
-                        inSmoke = true;
-                        break;
+                for (const effect of activeEffects) {
+                    if ((effect.type === 'smokeBomb' || effect.type === 'smokeScreen') && effect.active) {
+                        if (Math.hypot(player.x - effect.x, player.y - effect.y) < effect.radius) {
+                            inSmoke = true;
+                            break;
+                        }
                     }
                 }
 
-                // Check invisibility
-                const isInvisible = selectedItem && selectedItem.active && selectedItem.name === '隐身药水';
+                // Check invisibility from skill
+                let isInvisible = false;
+                if (playerSkills.invisibility && playerSkills.invisibility.active) {
+                    isInvisible = true;
+                }
+
+                // Check smokeScreen skill effect
+                if (playerSkills.smokeScreen && playerSkills.smokeScreen.active) {
+                    inSmoke = true;
+                }
+
+                // Maze mode: player in safe zone is invisible to ghosts
+                let inSafeZone = false;
+                if (gameMode === 'mazeEndless' && isInsideSafeZone(player.x, player.y, player.radius)) {
+                    inSafeZone = true;
+                }
 
                 // If in alert range and not invisible, ALWAYS chase (no patrol)
-                const inAlertRange = distToPlayer < ghost.alertRange && !isInvisible && !inSmoke;
+                const inAlertRange = distToPlayer < ghost.alertRange && !isInvisible && !inSmoke && !inSafeZone;
                 ghost.mode = inAlertRange ? 'chase' : 'patrol';
 
                 let currentSpeed = ghost.speed;
+
+                // Maze mode: speed scales with time (up to 1.5x after 5 minutes)
+                if (gameMode === 'mazeEndless') {
+                    const elapsed = (Date.now() - mazeStartTime) / 1000;
+                    const speedMultiplier = 1 + Math.min(0.5, elapsed / 300);
+                    currentSpeed *= speedMultiplier;
+                }
+
+                // Ghost magnet attraction (maze mode) - only attracts when at distance > 60px
+                let magnetTarget = null;
+                if (gameMode === 'mazeEndless') {
+                    for (const magnet of activeGhostMagnets) {
+                        const distM = Math.hypot(ghost.x - magnet.x, ghost.y - magnet.y);
+                        if (distM < 500 && distM > 60) {
+                            magnetTarget = { x: magnet.x, y: magnet.y };
+                            break;
+                        }
+                    }
+                }
 
                 if (ghost.rushDuration > 0) {
                     ghost.rushDuration -= dt * 1000;
@@ -483,14 +2715,29 @@
                         ghost.lastRush = Date.now();
                     }
                 } else {
-                    // Patrol - wander
-                    if (!ghost.patrolTarget || Math.hypot(ghost.patrolTarget.x - ghost.x, ghost.patrolTarget.y - ghost.y) < 20) {
-                        ghost.patrolTarget = {
-                            x: 100 + Math.random() * (WORLD_WIDTH - 200),
-                            y: 100 + Math.random() * (WORLD_HEIGHT - 200)
-                        };
+                    // Patrol - wander with unconscious player attraction
+                    let targetX, targetY;
+
+                    if (magnetTarget) {
+                        // Ghost magnet pulls ghost toward it
+                        targetX = magnetTarget.x;
+                        targetY = magnetTarget.y;
+                    } else {
+                        // Unconsciously drift toward player while patrolling
+                        const distToPlayer = Math.hypot(player.x - ghost.x, player.y - ghost.y);
+                        if (distToPlayer < 400 && distToPlayer > 50) {
+                            // Subtle attraction to player (30% weight toward player)
+                            const wanderX = 100 + Math.random() * (WORLD_WIDTH - 200);
+                            const wanderY = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                            targetX = ghost.x + (player.x - ghost.x) * 0.3 + (wanderX - ghost.x) * 0.7;
+                            targetY = ghost.y + (player.y - ghost.y) * 0.3 + (wanderY - ghost.y) * 0.7;
+                        } else {
+                            targetX = 100 + Math.random() * (WORLD_WIDTH - 200);
+                            targetY = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                        }
                     }
-                    const angleToTarget = Math.atan2(ghost.patrolTarget.y - ghost.y, ghost.patrolTarget.x - ghost.x);
+
+                    const angleToTarget = Math.atan2(targetY - ghost.y, targetX - ghost.x);
                     ghost.angle = angleToTarget;
                     const dx = Math.cos(angleToTarget) * currentSpeed * 0.6 * dt;
                     const dy = Math.sin(angleToTarget) * currentSpeed * 0.6 * dt;
@@ -504,6 +2751,7 @@
 
                 // Check if caught player
                 if (circleCollision(player.x, player.y, player.radius, ghost.x, ghost.y, ghost.radius)) {
+                    mazeDeathTime = mazeDeathTime > 0 ? mazeDeathTime : Date.now();
                     gameState = 'gameover';
                     gameResult = 'lose';
                 }
@@ -543,14 +2791,19 @@
 
         function moveGhostWithCollision(ghost, dx, dy) {
             let moved = false;
-            if (!isCollidingWithWalls(ghost.x + dx, ghost.y + dy, ghost.radius)) {
+            const mazeBlock = gameMode === 'mazeEndless';
+            const newX1 = ghost.x + dx, newY1 = ghost.y + dy;
+            const newX2 = ghost.x + dx, newY2 = ghost.y;
+            const newX3 = ghost.x, newY3 = ghost.y + dy;
+
+            if (!isCollidingWithWalls(newX1, newY1, ghost.radius) && !(mazeBlock && isInsideSafeZone(newX1, newY1, ghost.radius))) {
                 ghost.x += dx;
                 ghost.y += dy;
                 moved = true;
-            } else if (!isCollidingWithWalls(ghost.x + dx, ghost.y, ghost.radius)) {
+            } else if (!isCollidingWithWalls(newX2, newY2, ghost.radius) && !(mazeBlock && isInsideSafeZone(newX2, newY2, ghost.radius))) {
                 ghost.x += dx;
                 moved = true;
-            } else if (!isCollidingWithWalls(ghost.x, ghost.y + dy, ghost.radius)) {
+            } else if (!isCollidingWithWalls(newX3, newY3, ghost.radius) && !(mazeBlock && isInsideSafeZone(newX3, newY3, ghost.radius))) {
                 ghost.y += dy;
                 moved = true;
             }
@@ -660,6 +2913,96 @@
             });
         }
 
+        function drawSkillOrbs() {
+            const now = Date.now();
+            skillOrbs.forEach(orb => {
+                const screenX = orb.x - camera.x;
+                const screenY = orb.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const skillType = SKILL_TYPES[orb.type];
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = skillType.color;
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = skillType.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Inner
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                // Key label
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(skillType.key.toUpperCase(), screenX, screenY + orb.radius + 14);
+            });
+        }
+
+        function drawGhostSkillOrbs() {
+            const now = Date.now();
+            ghostSkillOrbs.forEach(orb => {
+                const screenX = orb.x - camera.x;
+                const screenY = orb.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                const color = orb.type === 'speedBoost' ? '#00aaff' : '#ff6666';
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Inner
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            });
+        }
+
+        function drawHumanSkillOrbs() {
+            const now = Date.now();
+            humanSkillOrbs.forEach(orb => {
+                const screenX = orb.x - camera.x;
+                const screenY = orb.y - camera.y;
+                if (screenX < -50 || screenX > canvas.width + 50 ||
+                    screenY < -50 || screenY > canvas.height + 50) return;
+
+                const pulse = 1 + Math.sin(now / 200) * 0.2;
+                const color = orb.type === 'teleport' ? '#00ffff' : (orb.type === 'trap' ? '#ff6666' : '#ff00ff');
+
+                // Glow
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Inner
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, orb.radius * 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+            });
+        }
+
         function drawMinimap() {
             const now = Date.now();
             const scaleX = MINIMAP_WIDTH / WORLD_WIDTH;
@@ -684,29 +3027,43 @@
                 ctx.fillRect(mx, my, mw, mh);
             });
 
-            // Ghost alert ranges and teleport targets
-            ghosts.forEach(ghost => {
-                const gmx = MINIMAP_X + ghost.x * scaleX;
-                const gmy = MINIMAP_Y + ghost.y * scaleY;
+            // Ghost alert ranges and teleport targets (hidden in maze mode)
+            if (gameMode !== 'mazeEndless') {
+                ghosts.forEach(ghost => {
+                    const gmx = MINIMAP_X + ghost.x * scaleX;
+                    const gmy = MINIMAP_Y + ghost.y * scaleY;
 
-                // Alert range circle
-                ctx.beginPath();
-                ctx.arc(gmx, gmy, ghost.alertRange * scaleX, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
-                ctx.fill();
-
-                // Ghost teleport warning (teleport is random, show indicator when close)
-                const timeSinceTeleport = now - ghost.lastTeleport;
-                const teleportInterval = 20000; // 20 seconds
-                if (timeSinceTeleport > teleportInterval * 0.8) {
-                    // Pulsing teleport indicator around ghost
-                    const pulse = 0.5 + Math.sin(now / 80) * 0.5;
+                    // Alert range circle
                     ctx.beginPath();
-                    ctx.arc(gmx, gmy, 6 + pulse * 3, 0, Math.PI * 2);
-                    ctx.fillStyle = `rgba(255, 100, 100, ${0.3 + pulse * 0.4})`;
+                    ctx.arc(gmx, gmy, ghost.alertRange * scaleX, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
                     ctx.fill();
-                }
-            });
+
+                    // Ghost teleport warning (teleport is random, show indicator when close)
+                    const timeSinceTeleport = now - ghost.lastTeleport;
+                    const teleportInterval = 20000; // 20 seconds
+                    if (timeSinceTeleport > teleportInterval * 0.8) {
+                        // Pulsing teleport indicator around ghost
+                        const pulse = 0.5 + Math.sin(now / 80) * 0.5;
+                        ctx.beginPath();
+                        ctx.arc(gmx, gmy, 6 + pulse * 3, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(255, 100, 100, ${0.3 + pulse * 0.4})`;
+                        ctx.fill();
+                    }
+                });
+            }
+
+            // Safe zones on minimap (maze mode)
+            if (gameMode === 'mazeEndless') {
+                safeZones.forEach(sz => {
+                    const smx = MINIMAP_X + sz.x * scaleX;
+                    const smy = MINIMAP_Y + sz.y * scaleY;
+                    ctx.beginPath();
+                    ctx.arc(smx, smy, sz.radius * scaleX, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 220, 50, 0.25)';
+                    ctx.fill();
+                });
+            }
 
             // Items
             items.forEach(item => {
@@ -739,15 +3096,17 @@
                 ctx.fill();
             }
 
-            // Ghosts
-            ghosts.forEach(ghost => {
-                const gmx = MINIMAP_X + ghost.x * scaleX;
-                const gmy = MINIMAP_Y + ghost.y * scaleY;
-                ctx.beginPath();
-                ctx.arc(gmx, gmy, 3, 0, Math.PI * 2);
-                ctx.fillStyle = '#ff0000';
-                ctx.fill();
-            });
+            // Ghosts (hidden in maze mode)
+            if (gameMode !== 'mazeEndless') {
+                ghosts.forEach(ghost => {
+                    const gmx = MINIMAP_X + ghost.x * scaleX;
+                    const gmy = MINIMAP_Y + ghost.y * scaleY;
+                    ctx.beginPath();
+                    ctx.arc(gmx, gmy, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fill();
+                });
+            }
 
             // Player
             const pmx = MINIMAP_X + player.x * scaleX;
@@ -839,6 +3198,49 @@
                     ctx.arc(screenX, screenY, effect.active ? 30 : 12, 0, Math.PI * 2);
                     ctx.fillStyle = effect.active ? `rgba(255, 238, 0, ${0.5 * (1 - progress)})` : '#ffee00';
                     ctx.fill();
+                } else if (effect.type === 'smokeScreen') {
+                    // Smoke screen skill effect
+                    const radius = effect.active ? effect.radius : 30;
+                    const alpha = effect.active ? 0.5 * (1 - progress) : 0.6;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(80, 80, 80, ${alpha})`;
+                    ctx.fill();
+                } else if (effect.type === 'missile') {
+                    // Missile explosion - large orange-red expanding ring + white center
+                    const radius = effect.radius * (1 + progress * 2);
+                    // Expanding ring
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(255, 80, 0, ${0.8 * (1 - progress)})`;
+                    ctx.lineWidth = 6 * (1 - progress);
+                    ctx.stroke();
+                    // Inner orange glow
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius * 0.6, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 120, 0, ${0.4 * (1 - progress)})`;
+                    ctx.fill();
+                    // White center
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius * 0.2, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * (1 - progress)})`;
+                    ctx.fill();
+                } else if (effect.type === 'ghostMagnetExplode') {
+                    // Ghost magnet explosion - purple expanding ring
+                    const radius = effect.radius * (1 + progress * 2);
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(160, 80, 255, ${0.8 * (1 - progress)})`;
+                    ctx.lineWidth = 6 * (1 - progress);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius * 0.5, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(200, 100, 255, ${0.5 * (1 - progress)})`;
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, radius * 0.15, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * (1 - progress)})`;
+                    ctx.fill();
                 }
             });
         }
@@ -860,64 +3262,105 @@
             ctx.fillText(`香蕉皮: ${playerThrowables.banana}`, 20, y);
         }
 
-        function drawChargingIndicator() {
-            if (!isHoldingSpace || gameState !== 'playing') return;
-
-            const holdDuration = Date.now() - spacebarHoldStart;
-            const chargePercent = Math.min(holdDuration / 1000, 1); // Max 1 second charge
+        function drawAimLine() {
+            if (gameState !== 'playing' || !isAiming) return;
 
             // Determine which item will be thrown
             let throwType = null;
-            if (playerThrowables.grenade > 0) throwType = 'grenade';
-            else if (playerThrowables.smokeBomb > 0) throwType = 'smokeBomb';
-            else if (playerThrowables.banana > 0) throwType = 'banana';
-            else if (selectedItem && selectedItem.cooldown <= 0) throwType = 'item';
+            let throwDist = 0;
+            let effectRadius = 0;
+            if (playerThrowables.grenade > 0) {
+                throwType = 'grenade';
+                throwDist = 300;
+                effectRadius = 100;
+            } else if (playerThrowables.smokeBomb > 0) {
+                throwType = 'smokeBomb';
+                throwDist = 400;
+                effectRadius = 120;
+            } else if (playerThrowables.banana > 0) {
+                throwType = 'banana';
+                throwDist = 200;
+                effectRadius = 30;
+            }
 
             if (!throwType) return;
 
-            // Draw charge bar
-            const barWidth = 60;
-            const barHeight = 8;
-            const barX = canvas.width / 2 - barWidth / 2;
-            const barY = canvas.height - 60;
+            // Calculate target position
+            const throwAngle = player.angle || 0;
+            const targetX = player.x + Math.cos(throwAngle) * throwDist;
+            const targetY = player.y + Math.sin(throwAngle) * throwDist;
 
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+            // Convert to screen coordinates
+            const screenPlayerX = player.x - camera.x;
+            const screenPlayerY = player.y - camera.y;
+            const screenTargetX = targetX - camera.x;
+            const screenTargetY = targetY - camera.y;
 
-            ctx.fillStyle = '#333333';
-            ctx.fillRect(barX, barY, barWidth, barHeight);
+            // Draw aim line (dashed)
+            ctx.setLineDash([8, 8]);
+            ctx.strokeStyle = throwType === 'grenade' ? '#ff4444' : (throwType === 'smokeBomb' ? '#888888' : '#ffee00');
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(screenPlayerX, screenPlayerY);
+            ctx.lineTo(screenTargetX, screenTargetY);
+            ctx.stroke();
+            ctx.setLineDash([]);
 
-            let color = '#ffffff';
-            if (throwType === 'grenade') color = '#ff4444';
-            else if (throwType === 'smokeBomb') color = '#888888';
-            else if (throwType === 'banana') color = '#ffee00';
+            // Draw effect radius circle at target
+            ctx.beginPath();
+            ctx.arc(screenTargetX, screenTargetY, effectRadius, 0, Math.PI * 2);
+            ctx.fillStyle = throwType === 'grenade' ? 'rgba(255, 68, 68, 0.2)' : (throwType === 'smokeBomb' ? 'rgba(136, 136, 136, 0.2)' : 'rgba(255, 238, 0, 0.2)');
+            ctx.fill();
+            ctx.strokeStyle = throwType === 'grenade' ? '#ff4444' : (throwType === 'smokeBomb' ? '#888888' : '#ffee00');
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
-            ctx.fillStyle = color;
-            ctx.fillRect(barX, barY, barWidth * chargePercent, barHeight);
+            // Draw target reticle
+            ctx.beginPath();
+            ctx.arc(screenTargetX, screenTargetY, 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
+            // Draw aiming indicator
             ctx.fillStyle = '#ffffff';
-            ctx.font = '12px Arial';
+            ctx.font = 'bold 16px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText(chargePercent >= 1 ? '松手投掷!' : '按住充能', canvas.width / 2, barY - 5);
+            ctx.fillText('[ 瞄准中 - 空格投掷 | ESC取消 ]', canvas.width / 2, 30);
         }
 
-        function drawItemUI() {
-            if (!selectedItem) return;
-
+        function drawSkillUI() {
             ctx.textAlign = 'right';
-            ctx.font = '16px Arial';
-            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px Arial';
 
-            const name = selectedItem.name;
-            const ready = selectedItem.cooldown <= 0 && !selectedItem.active;
-            const active = selectedItem.active;
+            let yOffset = 20;
+            for (const skillType in SKILL_TYPES) {
+                const skill = SKILL_TYPES[skillType];
+                const hasSkill = playerSkills[skillType] !== null;
+                const cooldown = skillCooldowns[skillType];
+                const isActive = playerSkills[skillType] && playerSkills[skillType].active;
+                const onCooldown = cooldown > 0;
 
-            ctx.fillStyle = active ? '#00ff00' : ready ? '#ffffff' : '#888888';
-            ctx.fillText(`${name}: ${active ? '激活中' : ready ? '就绪' : '冷却中'}`, canvas.width - 20, 35);
+                let status = '';
+                let color = '#555555';
 
-            if (!ready && !active) {
-                ctx.fillStyle = '#888888';
-                ctx.fillText(`${(selectedItem.cooldown / 1000).toFixed(1)}s`, canvas.width - 20, 55);
+                if (!hasSkill) {
+                    status = `[${skill.key}] 未拥有`;
+                    color = '#555555';
+                } else if (isActive) {
+                    status = `[${skill.key}] ${skill.name} 激活中`;
+                    color = '#00ff00';
+                } else if (onCooldown) {
+                    status = `[${skill.key}] ${skill.name} ${(cooldown / 1000).toFixed(1)}秒`;
+                    color = '#888888';
+                } else {
+                    status = `[${skill.key}] ${skill.name} 就绪`;
+                    color = skill.color;
+                }
+
+                ctx.fillStyle = color;
+                ctx.fillText(status, canvas.width - 20, canvas.height - yOffset);
+                yOffset += 20;
             }
         }
 
@@ -925,7 +3368,44 @@
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.font = '14px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText('WASD移动 | 空格技能 | 青色=冷却球 | 红色闪烁=鬼传送点 | 左下小地图', 20, canvas.height - 20);
+            if (gameMode === 'mazeEndless') {
+                ctx.fillText('WASD移动 | B/N/M技能 | F瞄准+空格投掷 | G导弹 | H建墙 | X引鬼 | N蒙眼 | C/V监控 | 豆子计分', 20, canvas.height - 20);
+            } else if (gameMode === 'dualHero') {
+                // Handled in drawDualHeroUI
+            } else {
+                ctx.fillText('WASD移动 | B/N/M技能 | F瞄准+空格投掷 | N蒙眼 | C/V监控 | ESC取消', 20, canvas.height - 20);
+            }
+        }
+
+        function drawMissileUI() {
+            if (gameMode !== 'mazeEndless') return;
+            ctx.textAlign = 'right';
+            ctx.font = '14px Arial';
+            let y = canvas.height - 60;
+            const c1 = playerMissiles > 0 ? '#ff8800' : '#555555';
+            ctx.fillStyle = c1;
+            ctx.fillText(`导弹: ${playerMissiles} [G]`, canvas.width - 20, y);
+            y -= 20;
+            const c2 = playerBuildBlocks > 0 ? '#9933ff' : '#555555';
+            ctx.fillStyle = c2;
+            ctx.fillText(`建墙: ${playerBuildBlocks} [H]`, canvas.width - 20, y);
+            y -= 20;
+            const c3 = playerGhostMagnets > 0 ? '#888888' : '#555555';
+            ctx.fillStyle = c3;
+            ctx.fillText(`引鬼器: ${playerGhostMagnets} [X]`, canvas.width - 20, y);
+            y -= 20;
+            // New items
+            const c4 = playerBlindfolds > 0 ? '#ff6600' : '#555555';
+            ctx.fillStyle = c4;
+            ctx.fillText(`蒙眼: ${playerBlindfolds} [N]`, canvas.width - 20, y);
+            y -= 20;
+            const c5 = playerCameras > 0 ? '#00ff00' : '#555555';
+            ctx.fillStyle = c5;
+            ctx.fillText(`监控: ${playerCameras}个 [C/V]`, canvas.width - 20, y);
+            y -= 20;
+            const c6 = ghostSpeedBoost > 0 ? '#00aaff' : '#555555';
+            ctx.fillStyle = c6;
+            ctx.fillText(`加速: ${ghostSpeedBoost} [F]`, canvas.width - 20, y);
         }
 
         function drawGameOver() {
@@ -934,12 +3414,53 @@
 
             ctx.textAlign = 'center';
 
-            if (gameResult === 'win') {
+            if (gameMode === 'dualHero') {
+                if (gameResult === 'win') {
+                    ctx.fillStyle = '#00ff00';
+                    ctx.font = 'bold 52px Arial';
+                    ctx.fillText('人类逃脱成功!', canvas.width/2, canvas.height/2 - 60);
+                    const survivalSec = Math.floor((Date.now() - dualHeroStartTime) / 1000);
+                    const min = Math.floor(survivalSec / 60);
+                    const sec = survivalSec % 60;
+                    ctx.font = '24px Arial';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(`存活时间: ${min}:${sec.toString().padStart(2, '0')}`, canvas.width/2, canvas.height/2 - 10);
+                    ctx.fillText(`收集豆子: ${dualHeroBeansCollected}/30`, canvas.width/2, canvas.height/2 + 20);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.font = 'bold 52px Arial';
+                    ctx.fillText('鬼抓住了人!', canvas.width/2, canvas.height/2 - 60);
+                    ctx.font = '24px Arial';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('P1(鬼) 胜利!', canvas.width/2, canvas.height/2 - 10);
+                    const survivalSec = Math.floor((Date.now() - dualHeroStartTime) / 1000);
+                    const min = Math.floor(survivalSec / 60);
+                    const sec = survivalSec % 60;
+                    ctx.fillText(`存活时间: ${min}:${sec.toString().padStart(2, '0')}`, canvas.width/2, canvas.height/2 + 20);
+                    ctx.fillText(`收集豆子: ${dualHeroBeansCollected}/30`, canvas.width/2, canvas.height/2 + 45);
+                }
+            } else if (gameResult === 'win') {
                 ctx.fillStyle = '#00ff00';
                 ctx.font = 'bold 52px Arial';
                 ctx.fillText('成功逃脱!', canvas.width/2, canvas.height/2 - 40);
                 ctx.font = '28px Arial';
                 ctx.fillText(`收集了 ${totalCollected} 个物品`, canvas.width/2, canvas.height/2 + 10);
+            } else if (gameMode === 'mazeEndless') {
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 52px Arial';
+                ctx.fillText('被抓住了!', canvas.width/2, canvas.height/2 - 60);
+                const deathTime = mazeDeathTime > 0 ? mazeDeathTime : Date.now();
+                const survivalSec = Math.floor((deathTime - mazeStartTime) / 1000);
+                const min = Math.floor(survivalSec / 60);
+                const sec = survivalSec % 60;
+                ctx.font = '24px Arial';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(`存活时间: ${min}:${sec.toString().padStart(2, '0')}`, canvas.width/2, canvas.height/2 - 10);
+                ctx.fillText(`收集豆子: ${mazeBeansCollected}`, canvas.width/2, canvas.height/2 + 20);
+                const score = survivalSec + mazeGhostsKilled * 10;
+                ctx.fillStyle = '#ffd700';
+                ctx.font = 'bold 28px Arial';
+                ctx.fillText(`总分: ${score}`, canvas.width/2, canvas.height/2 + 55);
             } else {
                 ctx.fillStyle = '#ff0000';
                 ctx.font = 'bold 52px Arial';
@@ -950,96 +3471,713 @@
 
             ctx.fillStyle = '#ffffff';
             ctx.font = '24px Arial';
-            ctx.fillText('点击重新开始', canvas.width/2, canvas.height/2 + 70);
+            ctx.fillText('点击重新开始', canvas.width/2, canvas.height/2 + 100);
         }
 
-        const ITEMS = [
-            { name: '加速药水', desc: '3秒内速度翻倍', color: '#00aaff' },
-            { name: '隐身药水', desc: '3秒内鬼无法追踪', color: '#aa00ff' },
-            { name: '烟雾弹', desc: '3秒内干扰鬼的视线', color: '#888888' }
-        ];
+        function startGame(mode) {
+            gameMode = mode;
+            playerSkills = { speedBoost: null, invisibility: null, smokeScreen: null };
+            skillCooldowns = { speedBoost: 0, invisibility: 0, smokeScreen: 0 };
+            playerThrowables = { grenade: 0, smokeBomb: 0, banana: 0 };
+            playerCameras = 0;
+            activeEffects = [];
+            ghosts = [createGhost(100, 100)];
+            lastGhostSpawn = Date.now();
+            player.x = WORLD_WIDTH / 2;
+            player.y = WORLD_HEIGHT / 2;
+            player.flashTime = 0;
+            player.angle = 0;
+            // Adventure mode: human moves at normal speed
+            if (mode !== 'dualHero') {
+                player.speed = 200;
+            }
+            if (mode === 'mazeEndless') {
+                generateMazeMap();
+            } else if (mode === 'dualHero') {
+                // Don't call generateMap() - startDualHero handles its own initialization
+                startDualHero();
+            } else {
+                generateMap();
+            }
+            lastTime = performance.now();
+            gameState = 'playing';
+        }
 
-        const ITEM_START_X = 150;
-        const ITEM_SPACING = 220;
-        const ITEM_WIDTH = 180;
-        const ITEM_HEIGHT = 200;
+        function updateDualHero(dt) {
+            if (gameMode !== 'dualHero') return;
 
-        const ITEM_CLICK_AREAS = ITEMS.map((item, i) => ({
-            x: ITEM_START_X + i * ITEM_SPACING,
-            y: canvas.height / 2 - 60,
-            w: ITEM_WIDTH,
-            h: ITEM_HEIGHT
-        }));
+            // Ghost is on LEFT screen, Human is on RIGHT screen
+            // Ghost ALWAYS = player, Human ALWAYS = player2
+            const ghost = player;
+            const human = player2;
 
-        let selectedItem = null;
-        let hoveredItemIndex = -1;
-        let smokeBombs = [];
+            // Update turret angle when in camera mode (continuous rotation while keys held)
+            if (cameraModeActive && cameraModeTarget !== null) {
+                const cam = surveillanceCameras[cameraModeTarget];
+                if (cam && cam.turretAngle !== undefined) {
+                    let angleChange = 0;
+                    if (keys2.i) angleChange -= 1;
+                    if (keys2.k) angleChange += 1;
+                    if (keys2.j) angleChange -= 1;
+                    if (keys2.l) angleChange += 1;
+                    cam.turretAngle += angleChange * dt * 3;
+                }
+            }
 
-        function useItem() {
-            if (!selectedItem || selectedItem.cooldown > 0 || selectedItem.active) return;
+            // Update ghost skill cooldowns
+            if (ghostSkills.teleport.cooldown > 0) ghostSkills.teleport.cooldown -= dt * 1000;
+            if (ghostSkills.trap.cooldown > 0) ghostSkills.trap.cooldown -= dt * 1000;
+            if (ghostSkills.summon.cooldown > 0) ghostSkills.summon.cooldown -= dt * 1000;
 
-            selectedItem.active = true;
-            selectedItem.cooldown = getItemCooldown(selectedItem.name);
+            // Update ghost tracker timer and cooldown
+            if (ghostTrackerCooldown > 0) ghostTrackerCooldown -= dt * 1000;
+            if (ghostTrackerTimer > 0) {
+                ghostTrackerTimer -= dt * 1000;
+                if (ghostTrackerTimer <= 0) {
+                    ghostTrackerActive = false;
+                    ghostTrackerTimer = 0;
+                }
+            }
 
-            setTimeout(() => {
-                selectedItem.active = false;
-            }, 3000);
+            // Update blindfold timer
+            if (blindfoldCooldown > 0) blindfoldCooldown -= dt * 1000;
+            if (blindfoldActive) {
+                blindfoldTimer -= dt * 1000;
+                if (blindfoldTimer <= 0) {
+                    blindfoldActive = false;
+                    blindfoldTimer = 0;
+                }
+            }
 
-            if (selectedItem.name === '烟雾弹') {
-                triggerSmokeBomb();
+            // Update ghost speed boost
+            if (ghostSpeedBoostCooldown > 0) ghostSpeedBoostCooldown -= dt * 1000;
+            if (ghostSpeedBoostActive) {
+                ghostSpeedBoostTimer -= dt * 1000;
+                if (ghostSpeedBoostTimer <= 0) {
+                    ghostSpeedBoostActive = false;
+                    ghostSpeedBoostTimer = 0;
+                }
+            }
+
+            // Update surveillance cameras - bullet push effect and ghost destroying cameras
+            const now = Date.now();
+            for (let i = surveillanceCameras.length - 1; i >= 0; i--) {
+                const cam = surveillanceCameras[i];
+
+                // Check if ghost is nearby and presses B twice quickly
+                const distToGhost = Math.hypot(ghost.x - cam.x, ghost.y - cam.y);
+                if (distToGhost < 80) {
+                    // Ghost can destroy camera when very close
+                    // Mark camera as being attacked
+                    if (!cam.beingDestroyed) {
+                        cam.beingDestroyed = true;
+                        cam.destroyTimer = 1000; // 1 second to destroy by pressing B
+                        cam.lastBPress = now;
+                    } else {
+                        // Check if B was pressed again within 1 second
+                        if (now - cam.lastBPress < 1000) {
+                            // Camera destroyed
+                            surveillanceCameras.splice(i, 1);
+                            if (cameraModeTarget === i) {
+                                cameraModeTarget = surveillanceCameras.length > 0 ? 0 : null;
+                                if (cameraModeTarget === null) cameraModeActive = false;
+                            } else if (cameraModeTarget > i) {
+                                cameraModeTarget--;
+                            }
+                            continue;
+                        } else {
+                            cam.beingDestroyed = false;
+                            cam.lastBPress = 0;
+                        }
+                    }
+                } else {
+                    cam.beingDestroyed = false;
+                    cam.lastBPress = 0;
+                }
+
+                // Update camera destroy timer
+                if (cam.beingDestroyed && cam.destroyTimer) {
+                    cam.destroyTimer -= dt * 1000;
+                    if (cam.destroyTimer <= 0) {
+                        cam.beingDestroyed = false;
+                    }
+                }
+
+                // Check bullet hit on ghost with proper wall bouncing
+                if (cam.shootTime && now - cam.shootTime < 2000) {
+                    const bulletSpeed = 500;
+                    const maxDist = bulletSpeed * (now - cam.shootTime) / 1000;
+
+                    // Calculate bullet path with proper wall reflection
+                    let bulletX = cam.x;
+                    let bulletY = cam.y;
+                    let dx = cam.bulletDx;
+                    let dy = cam.bulletDy;
+                    let remainingDist = maxDist;
+                    let bulletHitGhost = false;
+
+                    for (let bounce = 0; bounce < 5 && remainingDist > 0 && !bulletHitGhost; bounce++) {
+                        // Find nearest wall intersection
+                        let nearestDist = remainingDist;
+                        let hitWall = null;
+                        let hitPoint = null;
+
+                        for (const w of walls) {
+                            const wallLines = [
+                                { x1: w.x, y1: w.y, x2: w.x + w.w, y2: w.y, normal: { x: 0, y: -1 } },
+                                { x1: w.x, y1: w.y + w.h, x2: w.x + w.w, y2: w.y + w.h, normal: { x: 0, y: 1 } },
+                                { x1: w.x, y1: w.y, x2: w.x, y2: w.y + w.h, normal: { x: -1, y: 0 } },
+                                { x1: w.x + w.w, y1: w.y, x2: w.x + w.w, y2: w.y + w.h, normal: { x: 1, y: 0 } }
+                            ];
+
+                            for (const wall of wallLines) {
+                                const denom = dx * wall.normal.x + dy * wall.normal.y;
+                                if (Math.abs(denom) < 0.001) continue;
+
+                                const t = ((wall.x1 - bulletX) * wall.normal.x + (wall.y1 - bulletY) * wall.normal.y) / denom;
+                                if (t <= 0 || t >= nearestDist) continue;
+
+                                const hitX = bulletX + dx * t;
+                                const hitY = bulletY + dy * t;
+
+                                if (hitX >= Math.min(wall.x1, wall.x2) - 1 && hitX <= Math.max(wall.x1, wall.x2) + 1 &&
+                                    hitY >= Math.min(wall.y1, wall.y2) - 1 && hitY <= Math.max(wall.y1, wall.y2) + 1) {
+                                    nearestDist = t;
+                                    hitWall = wall;
+                                    hitPoint = { x: hitX, y: hitY };
+                                }
+                            }
+                        }
+
+                        if (hitWall && hitPoint) {
+                            // Move to hit point
+                            bulletX = hitPoint.x;
+                            bulletY = hitPoint.y;
+                            remainingDist -= nearestDist;
+
+                            // Check if ghost is near this point before bouncing
+                            if (Math.hypot(bulletX - ghost.x, bulletY - ghost.y) < ghost.radius + 10) {
+                                // Push ghost away from camera
+                                ghost.x += dx * CAMERA_PUSH_FORCE * dt * 10;
+                                ghost.y += dy * CAMERA_PUSH_FORCE * dt * 10;
+                                ghost.flashTime = now;
+                                bulletHitGhost = true;
+                                break;
+                            }
+
+                            // Reflect direction
+                            const dot = dx * hitWall.normal.x + dy * hitWall.normal.y;
+                            dx = dx - 2 * dot * hitWall.normal.x;
+                            dy = dy - 2 * dot * hitWall.normal.y;
+                        } else {
+                            // No more walls, check final position
+                            bulletX += dx * remainingDist;
+                            bulletY += dy * remainingDist;
+                            remainingDist = 0;
+
+                            if (Math.hypot(bulletX - ghost.x, bulletY - ghost.y) < ghost.radius + 10) {
+                                ghost.x += dx * CAMERA_PUSH_FORCE * dt * 10;
+                                ghost.y += dy * CAMERA_PUSH_FORCE * dt * 10;
+                                ghost.flashTime = now;
+                                bulletHitGhost = true;
+                            }
+                        }
+                    }
+
+                    if (bulletHitGhost) {
+                        cam.shootTime = 0; // Bullet hit, stop traveling
+                    }
+                }
+            }
+
+            // Ghost movement - ALWAYS uses WASD
+            let gdx = 0, gdy = 0;
+            if (keys.w) gdy -= 1;
+            if (keys.s) gdy += 1;
+            if (keys.a) gdx -= 1;
+            if (keys.d) gdx += 1;
+
+            if (gdx !== 0 || gdy !== 0) {
+                ghost.angle = Math.atan2(gdy, gdx);
+            }
+            if (gdx !== 0 && gdy !== 0) { gdx *= 0.707; gdy *= 0.707; }
+
+            // Ghost speed with boost
+            const ghostSpeed = ghostSpeedBoostActive ? ghost.speed * 1.8 : ghost.speed;
+            let newGhostX = ghost.x + gdx * ghostSpeed * dt;
+            let newGhostY = ghost.y + gdy * ghostSpeed * dt;
+            newGhostX = Math.max(30, Math.min(WORLD_WIDTH - 30, newGhostX));
+            newGhostY = Math.max(30, Math.min(WORLD_HEIGHT - 30, newGhostY));
+
+            // Ghost cannot enter safe zones
+            let ghostInSafeZone = false;
+            for (const sz of dualHeroSafeZones) {
+                if (Math.hypot(newGhostX - sz.x, newGhostY - sz.y) < sz.radius + ghost.radius) {
+                    ghostInSafeZone = true;
+                    break;
+                }
+            }
+
+            // Ghost cannot approach exit when active
+            if (dualHeroExit.active) {
+                const distToExit = Math.hypot(newGhostX - dualHeroExit.x, newGhostY - dualHeroExit.y);
+                if (distToExit < 150) {
+                    ghostInSafeZone = true;
+                }
+            }
+
+            if (!ghostInSafeZone && !isCollidingWithWalls(newGhostX, ghost.y, ghost.radius)) ghost.x = newGhostX;
+            if (!ghostInSafeZone && !isCollidingWithWalls(ghost.x, newGhostY, ghost.radius)) ghost.y = newGhostY;
+
+            // Ghost magnet attraction for main ghost
+            for (const magnet of dualHeroMagnetTraps) {
+                const distM = Math.hypot(ghost.x - magnet.x, ghost.y - magnet.y);
+                if (distM < 500 && distM > 30) {
+                    const angle = Math.atan2(magnet.y - ghost.y, magnet.x - ghost.x);
+                    ghost.x += Math.cos(angle) * 200 * dt;
+                    ghost.y += Math.sin(angle) * 200 * dt;
+                }
+            }
+
+            // Update teleport beacon overlay movement - uses IJKL (human's controls)
+            if (teleportBeaconActive) {
+                let cdx = 0, cdy = 0;
+                if (keys2.i) cdy -= 1;
+                if (keys2.k) cdy += 1;
+                if (keys2.j) cdx -= 1;
+                if (keys2.l) cdx += 1;
+                if (cdx !== 0 && cdy !== 0) { cdx *= 0.707; cdy *= 0.707; }
+                teleportBeaconX += cdx * TELEPORT_BEACON_SPEED * dt;
+                teleportBeaconY += cdy * TELEPORT_BEACON_SPEED * dt;
+                teleportBeaconX = Math.max(50, Math.min(WORLD_WIDTH - 50, teleportBeaconX));
+                teleportBeaconY = Math.max(50, Math.min(WORLD_HEIGHT - 50, teleportBeaconY));
+                return; // Freeze human movement while aiming
+            }
+
+            // Camera mode - human can't move, only controls turret
+            if (cameraModeActive) {
+                // Still check for item collection but no movement
+            } else {
+                // Update human movement - ALWAYS uses IJKL
+                let hdx = 0, hdy = 0;
+                if (keys2.i) hdy -= 1;
+                if (keys2.k) hdy += 1;
+                if (keys2.j) hdx -= 1;
+                if (keys2.l) hdx += 1;
+
+            if (hdx !== 0 || hdy !== 0) {
+                human.angle = Math.atan2(hdy, hdx);
+            }
+            if (hdx !== 0 && hdy !== 0) { hdx *= 0.707; hdy *= 0.707; }
+
+            let newHumanX = human.x + hdx * human.speed * dt;
+            let newHumanY = human.y + hdy * human.speed * dt;
+            // Human cannot go too far left (stay in right portion so they can see themselves)
+            newHumanX = Math.max(500, Math.min(WORLD_WIDTH - 30, newHumanX));
+            newHumanY = Math.max(30, Math.min(WORLD_HEIGHT - 30, newHumanY));
+            if (!isCollidingWithWalls(newHumanX, human.y, human.radius)) human.x = newHumanX;
+            if (!isCollidingWithWalls(human.x, newHumanY, human.radius)) human.y = newHumanY;
+            } // End of camera mode check
+
+            // Check bean collection
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, items[i].x, items[i].y, 10)) {
+                    items.splice(i, 1);
+                    dualHeroBeansCollected++;
+                    human.flashTime = Date.now();
+                    if (dualHeroBeansCollected >= 30) {
+                        dualHeroExit.active = true;
+                    }
+                    items.push(createRandomPosition());
+                }
+            }
+
+            // Check teleport item pickups
+            for (let i = randomTeleportPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, randomTeleportPickups[i].x, randomTeleportPickups[i].y, 12)) {
+                    randomTeleportPickups.splice(i, 1);
+                    playerRandomTeleports++;
+                    human.flashTime = Date.now();
+                    randomTeleportPickups.push(createRandomPosition());
+                }
+            }
+            for (let i = teleportBeaconPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, teleportBeaconPickups[i].x, teleportBeaconPickups[i].y, 12)) {
+                    teleportBeaconPickups.splice(i, 1);
+                    playerTeleportBeacons++;
+                    human.flashTime = Date.now();
+                    teleportBeaconPickups.push(createRandomPosition());
+                }
+            }
+            for (let i = returnBeaconPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, returnBeaconPickups[i].x, returnBeaconPickups[i].y, 12)) {
+                    returnBeaconPickups.splice(i, 1);
+                    playerReturnBeacons++;
+                    human.flashTime = Date.now();
+                    returnBeaconPickups.push(createRandomPosition());
+                }
+            }
+
+            // Human picks up blindfolds
+            for (let i = blindfoldPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, blindfoldPickups[i].x, blindfoldPickups[i].y, 12)) {
+                    blindfoldPickups.splice(i, 1);
+                    playerBlindfolds++;
+                    human.flashTime = Date.now();
+                    blindfoldPickups.push(createRandomPosition());
+                }
+            }
+
+            // Human picks up cameras (just adds to inventory, doesn't place directly)
+            for (let i = cameraPickups.length - 1; i >= 0; i--) {
+                if (cameraPickups[i] && circleCollision(human.x, human.y, human.radius, cameraPickups[i].x, cameraPickups[i].y, 12)) {
+                    const newPos = createRandomPosition();
+                    cameraPickups.splice(i, 1);
+                    playerCameras++; // Just add to inventory
+                    human.flashTime = Date.now();
+                    if (newPos) {
+                        cameraPickups.push(newPos);
+                    }
+                }
+            }
+
+            // Human picks up speed boosts (does NOT give to ghost - ghost must pick up its own)
+            for (let i = speedBoostPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(human.x, human.y, human.radius, speedBoostPickups[i].x, speedBoostPickups[i].y, 12)) {
+                    speedBoostPickups.splice(i, 1);
+                    // ghostSpeedBoost++ removed - speed boosts are for ghost only
+                    human.flashTime = Date.now();
+                    speedBoostPickups.push(createRandomPosition());
+                }
+            }
+
+            // Ghost also picks up speed boosts
+            for (let i = speedBoostPickups.length - 1; i >= 0; i--) {
+                if (circleCollision(ghost.x, ghost.y, ghost.radius, speedBoostPickups[i].x, speedBoostPickups[i].y, 12)) {
+                    speedBoostPickups.splice(i, 1);
+                    ghostSpeedBoost++;
+                    ghost.flashTime = Date.now();
+                    speedBoostPickups.push(createRandomPosition());
+                }
+            }
+
+            // Check trap collision - human teleported near ghost
+            for (let i = ghostTraps.length - 1; i >= 0; i--) {
+                const trap = ghostTraps[i];
+                if (Math.hypot(human.x - trap.x, human.y - trap.y) < trap.radius + human.radius) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = 80 + Math.random() * 40;
+                    human.x = ghost.x + Math.cos(angle) * dist;
+                    human.y = ghost.y + Math.sin(angle) * dist;
+                    human.x = Math.max(50, Math.min(WORLD_WIDTH - 50, human.x));
+                    human.y = Math.max(50, Math.min(WORLD_HEIGHT - 50, human.y));
+                    ghostTraps.splice(i, 1);
+                    human.flashTime = Date.now();
+                }
+            }
+
+            // Update summoned ghosts - affected by magnet traps
+            for (let i = summonedGhosts.length - 1; i >= 0; i--) {
+                const sg = summonedGhosts[i];
+                if (sg.rushDuration > 0) {
+                    sg.rushDuration -= dt * 1000;
+                    let targetX = human.x, targetY = human.y;
+
+                    // Magnet trap attraction takes priority
+                    for (const magnet of dualHeroMagnetTraps) {
+                        const distM = Math.hypot(sg.x - magnet.x, sg.y - magnet.y);
+                        if (distM < 500 && distM > 30) {
+                            targetX = magnet.x;
+                            targetY = magnet.y;
+                            break;
+                        }
+                    }
+
+                    const angleToTarget = Math.atan2(targetY - sg.y, targetX - sg.x);
+                    const dx = Math.cos(angleToTarget) * sg.speed * 1.8 * dt;
+                    const dy = Math.sin(angleToTarget) * sg.speed * 1.8 * dt;
+
+                    // Cannot enter safe zones
+                    let sgInSafeZone = false;
+                    for (const sz of dualHeroSafeZones) {
+                        if (Math.hypot(sg.x + dx - sz.x, sg.y + dy - sz.y) < sz.radius + sg.radius) {
+                            sgInSafeZone = true;
+                            break;
+                        }
+                    }
+                    if (!sgInSafeZone && !isCollidingWithWalls(sg.x + dx, sg.y + dy, sg.radius)) {
+                        sg.x += dx;
+                        sg.y += dy;
+                    }
+                    sg.angle = angleToTarget;
+
+                    // Cannot catch invisible human
+                    if (!dualHeroInvisibility && circleCollision(human.x, human.y, human.radius, sg.x, sg.y, sg.radius)) {
+                        gameState = 'gameover';
+                        gameResult = 'ghostWin';
+                    }
+                } else {
+                    summonedGhosts.splice(i, 1);
+                }
+            }
+
+            // Update magnet traps (explode after 5 seconds)
+            for (let i = dualHeroMagnetTraps.length - 1; i >= 0; i--) {
+                const magnet = dualHeroMagnetTraps[i];
+                if (Date.now() - magnet.startTime > magnet.duration) {
+                    // Kill nearby summoned ghosts
+                    for (let j = summonedGhosts.length - 1; j >= 0; j--) {
+                        if (Math.hypot(summonedGhosts[j].x - magnet.x, summonedGhosts[j].y - magnet.y) < 120) {
+                            summonedGhosts.splice(j, 1);
+                        }
+                    }
+                    activeEffects.push({
+                        type: 'ghostMagnetExplode',
+                        x: magnet.x,
+                        y: magnet.y,
+                        startTime: Date.now(),
+                        duration: 1500,
+                        radius: 120,
+                        active: true
+                    });
+                    dualHeroMagnetTraps.splice(i, 1);
+                }
+            }
+
+            // Update invisibility timer
+            if (dualHeroInvisibility) {
+                dualHeroInvisibilityTimer -= dt * 1000;
+                if (dualHeroInvisibilityTimer <= 0) {
+                    dualHeroInvisibility = false;
+                    dualHeroInvisibilityTimer = 0;
+                }
+            }
+            if (dualHeroInvisibilityCooldown > 0) {
+                dualHeroInvisibilityCooldown -= dt * 1000;
+                if (dualHeroInvisibilityCooldown < 0) dualHeroInvisibilityCooldown = 0;
+            }
+
+            // Check if ghost caught human directly (cannot catch invisible)
+            if (!dualHeroInvisibility && circleCollision(human.x, human.y, human.radius, ghost.x, ghost.y, ghost.radius)) {
+                gameState = 'gameover';
+                gameResult = 'ghostWin';
+            }
+
+            // Check exit - human escaped with enough beans
+            if (dualHeroExit.active && circleCollision(human.x, human.y, human.radius, dualHeroExit.x, dualHeroExit.y, 30)) {
+                gameState = 'gameover';
+                gameResult = 'win';
+            }
+
+            // Ghost picks up ghost skill orbs (speedBoost, etc.)
+            for (let i = ghostSkillOrbs.length - 1; i >= 0; i--) {
+                const orb = ghostSkillOrbs[i];
+                if (circleCollision(ghost.x, ghost.y, ghost.radius, orb.x, orb.y, orb.radius)) {
+                    playerSkills[orb.type] = { active: false };
+                    ghostSkillOrbs.splice(i, 1);
+                    ghost.flashTime = Date.now();
+                }
+            }
+            // Respawn ghost skill orbs
+            if (ghostSkillOrbs.length < 2) {
+                const ghostSkillTypes = ['speedBoost'];
+                const type = ghostSkillTypes[Math.floor(Math.random() * ghostSkillTypes.length)];
+                ghostSkillOrbs.push({ ...createRandomPosition(), type: type, radius: 14 });
+            }
+
+            // Human picks up human skill orbs (teleport, trap, summon)
+            for (let i = humanSkillOrbs.length - 1; i >= 0; i--) {
+                const orb = humanSkillOrbs[i];
+                if (circleCollision(human.x, human.y, human.radius, orb.x, orb.y, orb.radius)) {
+                    humanSkills[orb.type] = { active: false };
+                    humanSkillOrbs.splice(i, 1);
+                    human.flashTime = Date.now();
+                }
+            }
+            // Respawn human skill orbs
+            if (humanSkillOrbs.length < 2) {
+                const humanSkillTypes = ['teleport', 'trap', 'summon'];
+                const type = humanSkillTypes[Math.floor(Math.random() * humanSkillTypes.length)];
+                humanSkillOrbs.push({ ...createRandomPosition(), type: type, radius: 14 });
             }
         }
 
-        function getItemCooldown(itemName) {
-            switch(itemName) {
-                case '加速药水': return 15000;
-                case '隐身药水': return 25000;
-                case '烟雾弹': return 30000;
-                default: return 25000;
+        function startDualHero() {
+            // In dualHero mode: P1 (player) is ALWAYS ghost, P2 (player2) is ALWAYS human
+            isPlayer1Ghost = true; // Ghost is always player
+            ghostTrackerActive = false;
+            ghostTrackerTimer = 0;
+            ghostTrackerCooldown = 0;
+            player.x = 300;
+            player.y = WORLD_HEIGHT / 2;
+            player.angle = 0;
+            player2.x = WORLD_WIDTH - 300;
+            player2.y = WORLD_HEIGHT / 2;
+            player2.angle = Math.PI;
+            player2.flashTime = 0;
+            ghosts = [];
+            ghostTraps = [];
+            summonedGhosts = [];
+            dualHeroStartTime = Date.now();
+            dualHeroBeansCollected = 0;
+            dualHeroExit = { x: WORLD_WIDTH - 150, y: WORLD_HEIGHT / 2, active: false };
+            dualHeroInvisibility = false;
+            dualHeroInvisibilityTimer = 0;
+            dualHeroInvisibilityCooldown = 0;
+            dualHeroMagnetTraps = [];
+
+            // Generate walls for dual hero mode
+            walls = [];
+
+            // Border walls
+            walls.push({ x: 0, y: 0, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: WORLD_HEIGHT - 30, w: WORLD_WIDTH, h: 30 });
+            walls.push({ x: 0, y: 0, w: 30, h: WORLD_HEIGHT });
+            walls.push({ x: WORLD_WIDTH - 30, y: 0, w: 30, h: WORLD_HEIGHT });
+
+            // Interior walls - fewer than adventure mode
+            const numWalls = 20 + Math.floor(Math.random() * 10);
+            for (let i = 0; i < numWalls; i++) {
+                const horizontal = Math.random() > 0.5;
+                if (horizontal) {
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 200);
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 300);
+                    const w = 80 + Math.random() * 200;
+                    walls.push({ x, y, w, h: 20 });
+                } else {
+                    const x = 50 + Math.random() * (WORLD_WIDTH - 200);
+                    const y = 100 + Math.random() * (WORLD_HEIGHT - 300);
+                    const h = 80 + Math.random() * 200;
+                    walls.push({ x, y, w: 20, h });
+                }
+            }
+
+            // Initialize teleport items
+            playerRandomTeleports = 0;
+            playerTeleportBeacons = 0;
+            playerReturnBeacons = 0;
+            returnBeaconPos = null;
+            returnBeaconUses = 0;
+            teleportBeaconActive = false;
+
+            // Reset blindfold state
+            blindfoldActive = false;
+            blindfoldTimer = 0;
+            blindfoldCooldown = 0;
+            playerBlindfolds = 0;
+
+            // Reset surveillance cameras
+            surveillanceCameras = [];
+            playerCameras = 0;
+            cameraModeActive = false;
+            cameraModeTarget = null;
+
+            // Spawn pickup items on map
+            randomTeleportPickups = [];
+            teleportBeaconPickups = [];
+            returnBeaconPickups = [];
+            blindfoldPickups = [];
+            cameraPickups = [];
+            speedBoostPickups = [];
+            ghostSkillOrbs = [];
+            humanSkillOrbs = [];
+            for (let i = 0; i < 3; i++) {
+                randomTeleportPickups.push(createRandomPosition());
+                teleportBeaconPickups.push(createRandomPosition());
+                returnBeaconPickups.push(createRandomPosition());
+                blindfoldPickups.push(createRandomPosition());
+                cameraPickups.push(createRandomPosition());
+                speedBoostPickups.push(createRandomPosition());
+            }
+            // Spawn initial skill orbs
+            for (let i = 0; i < 2; i++) {
+                const ghostType = 'speedBoost';
+                ghostSkillOrbs.push({ ...createRandomPosition(), type: ghostType, radius: 14 });
+                const humanTypes = ['teleport', 'trap', 'summon'];
+                const humanType = humanTypes[Math.floor(Math.random() * humanTypes.length)];
+                humanSkillOrbs.push({ ...createRandomPosition(), type: humanType, radius: 14 });
+            }
+
+            // Reset ghost speed boost
+            ghostSpeedBoost = 0;
+            ghostSpeedBoostActive = false;
+            ghostSpeedBoostTimer = 0;
+            ghostSpeedBoostCooldown = 0;
+
+            ghostSkills = {
+                teleport: { cooldown: 0, maxCooldown: 8000 },
+                trap: { cooldown: 0, maxCooldown: 12000 },
+                summon: { cooldown: 0, maxCooldown: 15000 }
+            };
+
+            // Create safe zones
+            dualHeroSafeZones = [];
+            for (let i = 0; i < 3; i++) {
+                dualHeroSafeZones.push({
+                    x: 200 + Math.random() * (WORLD_WIDTH - 400),
+                    y: 200 + Math.random() * (WORLD_HEIGHT - 400),
+                    radius: 60 + Math.random() * 20
+                });
+            }
+
+            // Create bean pickups
+            items = [];
+            for (let i = 0; i < 30; i++) {
+                items.push(createRandomPosition());
             }
         }
 
-        function triggerSmokeBomb() {
-            smokeBombs.push({
-                x: player.x,
-                y: player.y,
-                radius: 100,
-                duration: 3000,
-                startTime: Date.now()
-            });
-        }
-
-        function drawItemSelect() {
+        function drawModeSelect() {
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 36px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('选择你的道具', canvas.width/2, 80);
+            ctx.fillText('选择模式', canvas.width/2, canvas.height/2 - 150);
 
-            ITEMS.forEach((item, i) => {
-                const area = ITEM_CLICK_AREAS[i];
-                const isHovered = hoveredItemIndex === i;
+            // Adventure mode button
+            const btnW = 280, btnH = 60;
+            const btn1X = canvas.width/2 - btnW/2, btn1Y = canvas.height/2 - 100;
+            ctx.fillStyle = '#1a5276';
+            ctx.fillRect(btn1X, btn1Y, btnW, btnH);
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(btn1X, btn1Y, btnW, btnH);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('冒险模式', canvas.width/2, btn1Y + 25);
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#aaaaaa';
+            ctx.fillText('收集物品，从出口逃脱', canvas.width/2, btn1Y + 45);
 
-                ctx.fillStyle = isHovered ? '#ffffff' : item.color;
-                ctx.fillRect(area.x, area.y, area.w, area.h);
+            // Maze Endless mode button
+            const btn2Y = canvas.height/2 - 20;
+            ctx.fillStyle = '#4a1a5e';
+            ctx.fillRect(btn1X, btn2Y, btnW, btnH);
+            ctx.strokeStyle = '#9b59b6';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(btn1X, btn2Y, btnW, btnH);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('迷宫无尽模式', canvas.width/2, btn2Y + 25);
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#aaaaaa';
+            ctx.fillText('扇形视野，安全区，无尽生存', canvas.width/2, btn2Y + 45);
 
-                if (isHovered) {
-                    ctx.strokeStyle = item.color;
-                    ctx.lineWidth = 3;
-                    ctx.strokeRect(area.x, area.y, area.w, area.h);
-                }
-
-                ctx.fillStyle = isHovered ? item.color : '#ffffff';
-                ctx.font = 'bold 20px Arial';
-                ctx.fillText(item.name, area.x + area.w/2, area.y + 50);
-
-                ctx.font = '14px Arial';
-                ctx.fillText(item.desc, area.x + area.w/2, area.y + 100);
-            });
-
-            canvas.style.cursor = hoveredItemIndex >= 0 ? 'pointer' : 'default';
+            // Dual Hero mode button
+            const btn3Y = canvas.height/2 + 60;
+            ctx.fillStyle = '#5a1a1a';
+            ctx.fillRect(btn1X, btn3Y, btnW, btnH);
+            ctx.strokeStyle = '#aa4444';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(btn1X, btn3Y, btnW, btnH);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('人鬼双雄', canvas.width/2, btn3Y + 25);
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#aaaaaa';
+            ctx.fillText('双人模式：WASD vs IJKL', canvas.width/2, btn3Y + 45);
         }
 
         function drawMenu() {
@@ -1064,19 +4202,33 @@
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Show info
+            // Show info - differs by mode
             ctx.fillStyle = '#ffffff';
             ctx.font = '18px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}  鬼: ${ghosts.length}`, 20, 30);
+            if (gameMode === 'mazeEndless') {
+                const survivalSec = Math.floor((Date.now() - mazeStartTime) / 1000);
+                const min = Math.floor(survivalSec / 60);
+                const sec = survivalSec % 60;
+                ctx.fillText(`存活: ${min}:${sec.toString().padStart(2, '0')}  鬼: ${ghosts.length}  豆子: ${mazeBeansCollected}`, 20, 30);
+            } else {
+                ctx.fillText(`物品: ${collectedCount}/${ITEMS_TO_WIN}  鬼: ${ghosts.length}`, 20, 30);
+            }
 
-            // Walls
-            ctx.fillStyle = COLORS.wall;
+            // Walls - more visible
             walls.forEach(w => {
                 const sx = w.x - camera.x;
                 const sy = w.y - camera.y;
                 if (sx + w.w > 0 && sx < canvas.width && sy + w.h > 0 && sy < canvas.height) {
+                    ctx.fillStyle = '#2a3a6e';
                     ctx.fillRect(sx, sy, w.w, w.h);
+                    ctx.strokeStyle = '#4a6aae';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(sx, sy, w.w, w.h);
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = '#3a5a9e';
+                    ctx.fillRect(sx, sy, w.w, w.h);
+                    ctx.shadowBlur = 0;
                 }
             });
 
@@ -1120,6 +4272,87 @@
             }
         }
 
+        function updateMazeRespawn() {
+            if (gameMode !== 'mazeEndless') return;
+            const now = Date.now();
+
+            // Respawn resources every 20 seconds
+            if (now - lastMazeRespawn > 20000) {
+                lastMazeRespawn = now;
+
+                // Spawn more items
+                for (let i = 0; i < ITEMS_PER_SPAWN; i++) {
+                    items.push(createRandomPosition());
+                }
+
+                // Spawn throwables
+                const types = ['grenade', 'smokeBomb', 'banana'];
+                for (let i = 0; i < 2; i++) {
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    throwableItems.push({
+                        ...createRandomPosition(),
+                        type: type,
+                        radius: THROWABLE_TYPES[type].radius
+                    });
+                }
+
+                // Respawn skill orbs
+                if (skillOrbs.length < 4) {
+                    const skillTypes = ['speedBoost', 'invisibility', 'smokeScreen'];
+                    for (let i = 0; i < 2; i++) {
+                        const type = skillTypes[Math.floor(Math.random() * skillTypes.length)];
+                        skillOrbs.push({
+                            ...createRandomPosition(),
+                            type: type,
+                            radius: 14
+                        });
+                    }
+                }
+            }
+
+            // Respawn missile pickups
+            if (missilePickups.length < 2) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                missilePickups.push({ ...pos, radius: 12 });
+            }
+
+            // Respawn build block pickups
+            if (buildBlockPickups.length < 1) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                buildBlockPickups.push({ ...pos, radius: 12 });
+            }
+
+            // Respawn ghost magnet pickups
+            if (ghostMagnetPickups.length < 1) {
+                let pos;
+                let attempts = 0;
+                do {
+                    pos = {
+                        x: 80 + Math.random() * (WORLD_WIDTH - 160),
+                        y: 80 + Math.random() * (WORLD_HEIGHT - 160)
+                    };
+                    attempts++;
+                } while (attempts < 100 && isCollidingWithWalls(pos.x, pos.y, 15));
+                ghostMagnetPickups.push({ ...pos, radius: 12 });
+            }
+        }
+
         function gameLoop(timestamp) {
             let dt = (timestamp - lastTime) / 1000;
             lastTime = timestamp;
@@ -1129,30 +4362,232 @@
 
             if (gameState === 'menu') {
                 drawMenu();
-            } else if (gameState === 'itemSelect') {
-                drawItemSelect();
+            } else if (gameState === 'modeSelect') {
+                drawModeSelect();
             } else if (gameState === 'playing') {
-                updatePlayer(dt);
-                updateGhosts(dt);
-                updateActiveEffects(dt);
+                if (gameMode === 'dualHero') {
+                    updateDualHero(dt);
+                } else {
+                    updatePlayer(dt);
+                    updateGhosts(dt);
+                    updateActiveEffects(dt);
+                    if (gameMode === 'mazeEndless') {
+                        updateMazeRespawn();
+                        updateGhostMagnets();
+                        updateBuildBlockWalls();
+                    }
+                }
                 updateCamera();
-                drawMap();
-                drawThrowableItems();
-                drawActiveEffects();
-                drawGhosts();
-                drawPlayer();
-                drawSmokeBombs();
-                drawCooldownOrbs();
-                drawItemUI();
-                drawThrowableUI();
-                drawChargingIndicator();
-                drawInstructions();
-                drawMinimap();
+
+                if (gameMode === 'dualHero') {
+                    // Split screen: left = ghost view (player/WASD), right = human view (player2/IJKL)
+                    const ghost = player;   // Ghost is ALWAYS player (left side, WASD)
+                    const human = player2;  // Human is ALWAYS player2 (right side, IJKL)
+
+                    // Left half - Ghost view (ghost centered)
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(0, 0, canvas.width / 2, canvas.height);
+                    ctx.clip();
+
+                    // Ghost centered in left half: camera.x = ghost.x - 200
+                    const halfW = canvas.width / 2;
+                    const ghostCamX = ghost.x - halfW / 2;
+                    const ghostCamY = ghost.y - canvas.height / 2;
+                    const savedCam = { ...camera };
+                    camera = {
+                        x: Math.max(0, Math.min(WORLD_WIDTH - halfW, ghostCamX)),
+                        y: Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, ghostCamY))
+                    };
+
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(0, 0, halfW, canvas.height);
+                    drawMap();
+                    drawDualHeroSafeZones();
+                    drawDualHeroMagnetTraps();
+                    drawDualHeroExit();
+                    drawGhostTraps();
+                    drawSurveillanceCameras();
+                    drawSurveillanceBullets();
+                    drawGhostTracker();
+                    drawSummonedGhosts();
+                    drawPlayer();
+                    drawPlayer2();
+                    drawRandomTeleportPickups();
+                    drawTeleportBeaconPickups();
+                    drawReturnBeaconPickups();
+                    drawBlindfoldPickups();
+                    drawCameraPickups();
+                    drawSpeedBoostPickups();
+                    drawGhostSkillOrbs();
+                    drawReturnBeaconMarker();
+                    drawInstructions();
+                    drawBlindfoldOverlay();
+                    drawDualHeroUI(true, ghost, human);
+
+                    ctx.restore();
+
+                    // Draw camera mode overlay only when NOT in fullscreen camera mode
+                    if (!cameraModeActive) {
+                        drawCameraModeOverlay();
+                    }
+
+                    // Right half - Camera view when active, otherwise human view
+                    if (cameraModeActive) {
+                        // Full camera view mode - centered on camera position
+                        const cam = surveillanceCameras[cameraModeTarget];
+                        if (cam) {
+                            // Center view on camera position
+                            const camViewX = cam.x - halfW / 2;
+                            const camViewY = cam.y - canvas.height / 2;
+                            camera = {
+                                x: Math.max(0, Math.min(WORLD_WIDTH - halfW, camViewX)),
+                                y: Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, camViewY))
+                            };
+                        }
+                        drawCameraViewFullscreen();
+                    } else {
+                        // Normal human view
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(halfW, 0, halfW, canvas.height);
+                        ctx.clip();
+
+                        // Human centered in right half: camera.x = human.x - (halfW + halfW/2) = human.x - 600
+                        const humanCamX = human.x - (halfW + halfW / 2);
+                        const humanCamY = human.y - canvas.height / 2;
+                        camera = {
+                            x: Math.max(0, Math.min(WORLD_WIDTH - halfW, humanCamX)),
+                            y: Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, humanCamY))
+                        };
+
+                        ctx.fillStyle = '#1a1a2e';
+                        ctx.fillRect(halfW, 0, halfW, canvas.height);
+                        drawMap();
+                        drawDualHeroSafeZones();
+                        drawDualHeroMagnetTraps();
+                        drawDualHeroExit();
+                        drawGhostTraps();
+                        drawSurveillanceCameras();
+                        drawSurveillanceBullets();
+                        drawSummonedGhosts();
+                        drawPlayer();
+                        drawPlayer2();
+                        drawRandomTeleportPickups();
+                        drawTeleportBeaconPickups();
+                        drawReturnBeaconPickups();
+                        drawBlindfoldPickups();
+                        drawCameraPickups();
+                        drawSpeedBoostPickups();
+                        drawHumanSkillOrbs();
+                        drawReturnBeaconMarker();
+                        drawInstructions();
+                        drawDualHeroUI(false, ghost, human);
+
+                        ctx.restore();
+                    }
+
+                    camera = savedCam;
+
+                    // Draw teleport beacon overlay if active
+                    drawTeleportBeaconOverlay();
+                } else {
+                    drawMap();
+                    if (gameMode === 'mazeEndless') {
+                        drawSafeZones();
+                        drawBuildBlockWalls();
+                        drawMissilePickups();
+                        drawBuildBlockPickups();
+                        drawGhostMagnetPickups();
+                        drawActiveGhostMagnets();
+                    }
+                    drawThrowableItems();
+                    drawActiveEffects();
+                    drawGhosts();
+                    drawPlayer();
+                    drawSmokeBombs();
+                    drawCooldownOrbs();
+                    drawSkillOrbs();
+                    drawBlindfoldPickups();
+                    drawCameraPickups();
+                    drawSpeedBoostPickups();
+                    drawSurveillanceCameras();
+                    // Fog of war (draws over world but before UI)
+                    if (gameMode === 'mazeEndless') drawFogOfWar();
+                    drawSkillUI();
+                    drawThrowableUI();
+                    drawAimLine();
+                    drawMissileUI();
+                    drawMissileOverlay();
+                    drawBlindfoldOverlay();
+                    drawCameraModeOverlay();
+                    drawInstructions();
+                    drawMinimap();
+                }
             } else if (gameState === 'gameover') {
-                drawMap();
-                drawGhosts();
-                drawPlayer();
-                drawGameOver();
+                if (gameMode === 'dualHero') {
+                    const ghost = player;   // Ghost is ALWAYS player
+                    const human = player2;  // Human is ALWAYS player2
+
+                    // Left half - Ghost view
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(0, 0, canvas.width / 2, canvas.height);
+                    ctx.clip();
+
+                    const ghostCam = { x: ghost.x - canvas.width / 4, y: ghost.y - canvas.height / 2 };
+                    ghostCam.x = Math.max(0, Math.min(WORLD_WIDTH - canvas.width / 2, ghostCam.x));
+                    ghostCam.y = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, ghostCam.y));
+                    camera = ghostCam;
+
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(0, 0, canvas.width / 2, canvas.height);
+                    drawMap();
+                    drawDualHeroSafeZones();
+                    drawDualHeroMagnetTraps();
+                    drawDualHeroExit();
+                    drawGhostTraps();
+                    drawSummonedGhosts();
+                    drawPlayer();
+                    drawPlayer2();
+
+                    ctx.restore();
+
+                    // Divider line
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(canvas.width / 2 - 2, 0, 4, canvas.height);
+
+                    // Right half - Human view
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+                    ctx.clip();
+
+                    const humanCam = { x: human.x - canvas.width * 0.75, y: human.y - canvas.height / 2 };
+                    humanCam.x = Math.max(0, Math.min(WORLD_WIDTH - canvas.width / 2, humanCam.x));
+                    humanCam.y = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, humanCam.y));
+                    camera = humanCam;
+
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+                    drawMap();
+                    drawDualHeroSafeZones();
+                    drawDualHeroMagnetTraps();
+                    drawDualHeroExit();
+                    drawGhostTraps();
+                    drawSummonedGhosts();
+                    drawPlayer();
+                    drawPlayer2();
+
+                    ctx.restore();
+
+                    drawGameOver();
+                } else {
+                    drawMap();
+                    drawGhosts();
+                    drawPlayer();
+                    drawGameOver();
+                }
             }
             requestAnimationFrame(gameLoop);
         }
@@ -1165,19 +4600,20 @@
             const my = e.clientY - rect.top;
 
             if (gameState === 'menu') {
-                gameState = 'itemSelect';
-            } else if (gameState === 'itemSelect') {
-                for (let i = 0; i < ITEM_CLICK_AREAS.length; i++) {
-                    const area = ITEM_CLICK_AREAS[i];
-                    if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
-                        selectedItem = { ...ITEMS[i], cooldown: 0 };
-                        smokeBombs = [];
-                        ghosts = [createGhost(100, 100)];
-                        lastGhostSpawn = Date.now();
-                        generateMap();
-                        lastTime = performance.now();
-                        gameState = 'playing';
-                        break;
+                gameState = 'modeSelect';
+            } else if (gameState === 'modeSelect') {
+                const btnW = 280, btnH = 60;
+                const btnX = canvas.width/2 - btnW/2;
+                const btn1Y = canvas.height/2 - 100;
+                const btn2Y = canvas.height/2 - 20;
+                const btn3Y = canvas.height/2 + 60;
+                if (mx >= btnX && mx <= btnX + btnW) {
+                    if (my >= btn1Y && my <= btn1Y + btnH) {
+                        startGame('adventure');
+                    } else if (my >= btn2Y && my <= btn2Y + btnH) {
+                        startGame('mazeEndless');
+                    } else if (my >= btn3Y && my <= btn3Y + btnH) {
+                        startGame('dualHero');
                     }
                 }
             } else if (gameState === 'gameover') {
@@ -1186,22 +4622,7 @@
         });
 
         canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-
-            hoveredItemIndex = -1;
-            if (gameState === 'itemSelect') {
-                ITEM_CLICK_AREAS.forEach((area, i) => {
-                    if (mx >= area.x && mx <= area.x + area.w && my >= area.y && my <= area.y + area.h) {
-                        hoveredItemIndex = i;
-                    }
-                });
-            }
-        });
-
-        canvas.addEventListener('mouseleave', () => {
-            hoveredItemIndex = -1;
+            // Track mouse for future use (aiming, etc.)
         });
     </script>
 </body>
