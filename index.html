@@ -6,26 +6,38 @@
     <title>鬼抓人</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: #0f0f1a;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            font-family: Arial, sans-serif;
+        html, body {
+            width: 100%;
+            height: 100%;
             overflow: hidden;
+            background: #0f0f1a;
+            font-family: Arial, sans-serif;
         }
         canvas {
-            border: 2px solid #16213e;
-            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+            display: block;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <canvas id="gameCanvas"></canvas>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        // Resize canvas to fill window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            // Reinitialize fog canvas if it exists
+            if (fogCanvas) {
+                fogCanvas.width = canvas.width;
+                fogCanvas.height = canvas.height;
+            }
+        });
 
         // Game state
         let gameState = 'menu';
@@ -90,6 +102,260 @@
         // Dual Hero mode (人鬼双雄)
         let player2 = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, radius: 12, speed: 360, flashTime: 0, angle: 0 };
         const keys2 = { i: false, j: false, k: false, l: false };
+
+        // === KEY BINDINGS CONFIGURATION ===
+        const KEY_BINDINGS_CONFIG = {
+            adventure: {
+                moveUp:    { key: 'w', description: '上', player: 1 },
+                moveDown:  { key: 's', description: '下', player: 1 },
+                moveLeft:  { key: 'a', description: '左', player: 1 },
+                moveRight: { key: 'd', description: '右', player: 1 },
+                toggleAim:    { key: 'f', description: '切换瞄准', player: 1 },
+                throwItem:     { key: 'Space', description: '投掷', player: 1 },
+                cancelAim:     { key: 'Escape', description: '取消瞄准', player: 1 },
+                skillSpeedBoost:   { key: 'b', description: '技能-加速', player: 1 },
+                skillInvisibility: { key: 'n', description: '技能-隐身', player: 1 },
+                skillSmokeScreen:  { key: 'm', description: '技能-烟雾', player: 1 },
+                useBlindfold:  { key: 'n', description: '使用蒙眼', player: 1 },
+                activateSpeedBoost: { key: 'f', description: '使用加速', player: 1 },
+                placeCamera:   { key: 'c', description: '放置摄像头', player: 1 },
+                viewCamera:    { key: 'v', description: '查看摄像头', player: 1 },
+                activateMissile:  { key: 'g', description: '激活导弹', player: 1 },
+                fireMissile:      { key: 'Space', description: '发射导弹', player: 1 },
+                cancelMissile:    { key: 'Escape', description: '取消导弹', player: 1 },
+                useGhostMagnet:   { key: 'x', description: '使用幽灵磁铁', player: 1 },
+                useBuildBlock:    { key: 'h', description: '使用建造方块', player: 1 },
+            },
+            mazeEndless: {
+                moveUp:    { key: 'w', description: '上', player: 1 },
+                moveDown:  { key: 's', description: '下', player: 1 },
+                moveLeft:  { key: 'a', description: '左', player: 1 },
+                moveRight: { key: 'd', description: '右', player: 1 },
+                toggleAim:    { key: 'f', description: '切换瞄准', player: 1 },
+                throwItem:     { key: 'Space', description: '投掷', player: 1 },
+                cancelAim:     { key: 'Escape', description: '取消瞄准', player: 1 },
+                skillSpeedBoost:   { key: 'b', description: '技能-加速', player: 1 },
+                skillInvisibility: { key: 'n', description: '技能-隐身', player: 1 },
+                skillSmokeScreen:  { key: 'm', description: '技能-烟雾', player: 1 },
+                useBlindfold:  { key: 'n', description: '使用蒙眼', player: 1 },
+                activateSpeedBoost: { key: 'f', description: '使用加速', player: 1 },
+                placeCamera:   { key: 'c', description: '放置摄像头', player: 1 },
+                viewCamera:    { key: 'v', description: '查看摄像头', player: 1 },
+                activateMissile:  { key: 'g', description: '激活导弹', player: 1 },
+                fireMissile:      { key: 'Space', description: '发射导弹', player: 1 },
+                cancelMissile:    { key: 'Escape', description: '取消导弹', player: 1 },
+                useGhostMagnet:   { key: 'x', description: '使用幽灵磁铁', player: 1 },
+                useBuildBlock:    { key: 'h', description: '使用建造方块', player: 1 },
+            },
+            dualHero: {
+                // Ghost (Player 1 - WASD)
+                ghostMoveUp:    { key: 'w', description: '鬼-上', player: 1 },
+                ghostMoveDown:  { key: 's', description: '鬼-下', player: 1 },
+                ghostMoveLeft:  { key: 'a', description: '鬼-左', player: 1 },
+                ghostMoveRight: { key: 'd', description: '鬼-右', player: 1 },
+                ghostTeleport:  { key: 'u', description: '鬼-传送', player: 1 },
+                ghostSpeedBoost:{ key: 'f', description: '鬼-加速', player: 1 },
+                ghostPlaceTrap: { key: 'y', description: '鬼-放置陷阱', player: 1 },
+                ghostSummon:    { key: 'r', description: '鬼-召唤小鬼', player: 1 },
+                ghostTracker:   { key: 'x', description: '鬼-追踪', player: 1 },
+                ghostDestroyCamera: { key: 'b', description: '鬼-破坏摄像头', player: 1 },
+                // Human (Player 2 - Arrow Keys)
+                humanMoveUp:    { key: 'arrowup', description: '人-上', player: 2 },
+                humanMoveDown:  { key: 'arrowdown', description: '人-下', player: 2 },
+                humanMoveLeft:  { key: 'arrowleft', description: '人-左', player: 2 },
+                humanMoveRight: { key: 'arrowright', description: '人-右', player: 2 },
+                humanInvisibility: { key: '1', description: '人-隐身', player: 2 },
+                humanUseBlindfold: { key: '2', description: '人-蒙眼', player: 2 },
+                humanPlaceCamera:  { key: '3', description: '人-放置摄像头', player: 2 },
+                humanViewCamera:   { key: '4', description: '人-查看摄像头', player: 2 },
+                humanRandomTeleport: { key: '5', description: '人-随机传送', player: 2 },
+                humanTeleportBeacon: { key: '6', description: '人-传送信标', player: 2 },
+                humanPlaceReturnBeacon: { key: '7', description: '人-放置返回信标', player: 2 },
+                humanReturnToBeacon: { key: '8', description: '人-返回信标', player: 2 },
+                humanTurretUp:    { key: 'arrowup', description: '人-炮台向上', player: 2 },
+                humanTurretDown:  { key: 'arrowdown', description: '人-炮台向下', player: 2 },
+                humanTurretLeft:  { key: 'arrowleft', description: '人-炮台向左', player: 2 },
+                humanTurretRight: { key: 'arrowright', description: '人-炮台向右', player: 2 },
+                // Shared
+                fireCamera:    { key: 'Space', description: '摄像头射击', player: 0 },
+                cancelAction:  { key: 'Escape', description: '取消', player: 0 },
+                humanConfirmTeleport: { key: 'Space', description: '确认传送', player: 2 },
+                humanCancelTeleport: { key: 'Escape', description: '取消传送', player: 2 },
+            }
+        };
+
+        // Runtime key bindings (merged with localStorage)
+        let KEY_BINDINGS = {};
+
+        // Track pressed state for action keys
+        let _actionKeyState = {};
+
+        // Key settings state
+        let keySettingsState = {
+            mode: 'adventure',
+            player: 1,
+            selectingAction: null,
+            waitingForKey: false
+        };
+
+        // Load key bindings from localStorage
+        function loadKeyBindingsFromLocalStorage() {
+            try {
+                const saved = localStorage.getItem('ghostChaseKeyBindings');
+                if (saved) {
+                    KEY_BINDINGS = JSON.parse(saved);
+                    return true;
+                }
+            } catch (e) {
+                console.warn('Failed to load key bindings:', e);
+            }
+            KEY_BINDINGS = JSON.parse(JSON.stringify(KEY_BINDINGS_CONFIG));
+            return false;
+        }
+
+        // Save key bindings to localStorage
+        function saveKeyBindingsToLocalStorage() {
+            try {
+                localStorage.setItem('ghostChaseKeyBindings', JSON.stringify(KEY_BINDINGS));
+            } catch (e) {
+                console.warn('Failed to save key bindings:', e);
+            }
+        }
+
+        // Get binding for an action
+        function getBinding(actionName) {
+            const mode = gameMode;
+            if (KEY_BINDINGS[mode] && KEY_BINDINGS[mode][actionName]) {
+                return KEY_BINDINGS[mode][actionName];
+            }
+            if (KEY_BINDINGS_CONFIG[mode] && KEY_BINDINGS_CONFIG[mode][actionName]) {
+                return KEY_BINDINGS_CONFIG[mode][actionName];
+            }
+            return null;
+        }
+
+        // Get special mode
+        function getSpecialMode() {
+            if (cameraModeActive) return 'cameraMode';
+            if (teleportBeaconActive) return 'teleportBeacon';
+            if (gameMode === 'mazeEndless' && missileState && missileState.active) return 'missileMode';
+            return null;
+        }
+
+        // Get action for a key press
+        function getActionForKey(key, context) {
+            const mode = context.mode || gameMode;
+            const player = context.player || 1;
+            const specialMode = context.specialMode || getSpecialMode();
+
+            // Special mode handling
+            if (specialMode === 'cameraMode') {
+                if (key === 'Space' || key === ' ') return 'fireCamera';
+                if (key === 'Escape') return 'cancelAction';
+            }
+            if (specialMode === 'teleportBeacon') {
+                if (key === 'Space' || key === ' ') return 'humanConfirmTeleport';
+                if (key === 'Escape') return 'humanCancelTeleport';
+            }
+            if (specialMode === 'missileMode') {
+                if (key === 'Space' || key === ' ') return 'fireMissile';
+                if (key === 'Escape') return 'cancelMissile';
+            }
+
+            // Check mode-specific bindings
+            const bindings = KEY_BINDINGS[mode] || KEY_BINDINGS_CONFIG[mode];
+            if (bindings) {
+                for (const [action, binding] of Object.entries(bindings)) {
+                    const bindingKey = binding.key.toLowerCase();
+                    const inputKey = key.toLowerCase();
+                    if (bindingKey === inputKey && (binding.player === player || binding.player === 0)) {
+                        return action;
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Check if an action's key is currently pressed
+        function isKeyPressed(actionName) {
+            const binding = getBinding(actionName);
+            if (!binding) return false;
+            const key = binding.key.toLowerCase();
+            if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+                return keys[key] === true;
+            }
+            if (key === 'i' || key === 'j' || key === 'k' || key === 'l') {
+                return keys2[key] === true;
+            }
+            return _actionKeyState[actionName] === true;
+        }
+
+        // Get movement keys for a player based on current KEY_BINDINGS
+        function getPlayerMovementKeys(player) {
+            const mode = gameMode;
+            const bindings = KEY_BINDINGS[mode] || KEY_BINDINGS_CONFIG[mode];
+            if (!bindings) return null;
+
+            const moveActions = player === 1
+                ? ['moveUp', 'moveDown', 'moveLeft', 'moveRight']
+                : ['humanMoveUp', 'humanMoveDown', 'humanMoveLeft', 'humanMoveRight'];
+
+            const keyMap = {};
+            for (const action of moveActions) {
+                if (bindings[action]) {
+                    keyMap[action] = bindings[action].key.toLowerCase();
+                }
+            }
+            return keyMap;
+        }
+
+        // Sync keys/keys2 state based on current KEY_BINDINGS when a key is pressed
+        function syncKeysForBinding(key, pressed) {
+            const mode = gameMode;
+            const bindings = KEY_BINDINGS[mode] || KEY_BINDINGS_CONFIG[mode];
+            if (!bindings) return;
+
+            const keyLower = key.toLowerCase();
+
+            // Find all actions that use this key and are movement actions
+            for (const [action, binding] of Object.entries(bindings)) {
+                if (binding.key.toLowerCase() !== keyLower) continue;
+
+                // Player 1 movement keys
+                if (action === 'moveUp' || action === 'ghostMoveUp') {
+                    keys.w = pressed;
+                } else if (action === 'moveDown' || action === 'ghostMoveDown') {
+                    keys.s = pressed;
+                } else if (action === 'moveLeft' || action === 'ghostMoveLeft') {
+                    keys.a = pressed;
+                } else if (action === 'moveRight' || action === 'ghostMoveRight') {
+                    keys.d = pressed;
+                }
+
+                // Player 2 movement keys (map to i/j/k/l internally)
+                if (action === 'humanMoveUp') {
+                    keys2.i = pressed;
+                } else if (action === 'humanMoveDown') {
+                    keys2.k = pressed;
+                } else if (action === 'humanMoveLeft') {
+                    keys2.j = pressed;
+                } else if (action === 'humanMoveRight') {
+                    keys2.l = pressed;
+                }
+
+                // Also handle turret controls (same as movement)
+                if (action === 'humanTurretUp') {
+                    keys2.i = pressed;
+                } else if (action === 'humanTurretDown') {
+                    keys2.k = pressed;
+                } else if (action === 'humanTurretLeft') {
+                    keys2.j = pressed;
+                } else if (action === 'humanTurretRight') {
+                    keys2.l = pressed;
+                }
+            }
+        }
+
         let isPlayer1Ghost = false;  // true = P1是鬼, P2是人
         let ghostSkills = {
             teleport: { cooldown: 0, maxCooldown: 8000 },
@@ -212,11 +478,57 @@
 
         document.addEventListener('keydown', (e) => {
             const key = e.key.toLowerCase();
+            const code = e.code;
+
+            // Handle key rebinding in keySettings mode
+            if (gameState === 'keySettings' && keySettingsState.waitingForKey && keySettingsState.selectingAction) {
+                e.preventDefault();
+                if (key === 'escape') {
+                    keySettingsState.waitingForKey = false;
+                    keySettingsState.selectingAction = null;
+                } else {
+                    // Rebind the key
+                    const mode = keySettingsState.mode;
+                    const action = keySettingsState.selectingAction;
+                    const newKey = (code === 'Space') ? ' ' : key;
+
+                    // Check if key is already bound to another action
+                    const bindings = KEY_BINDINGS[mode] || KEY_BINDINGS_CONFIG[mode];
+                    for (const [existingAction, binding] of Object.entries(bindings)) {
+                        if (binding.key.toLowerCase() === newKey.toLowerCase() && existingAction !== action) {
+                            // Swap bindings
+                            const oldKey = KEY_BINDINGS[mode][action].key;
+                            KEY_BINDINGS[mode][existingAction].key = oldKey;
+                        }
+                    }
+
+                    // Set the new key
+                    if (!KEY_BINDINGS[mode]) KEY_BINDINGS[mode] = {};
+                    if (!KEY_BINDINGS[mode][action]) KEY_BINDINGS[mode][action] = { ...KEY_BINDINGS_CONFIG[mode][action] };
+                    KEY_BINDINGS[mode][action].key = newKey;
+
+                    keySettingsState.waitingForKey = false;
+                    keySettingsState.selectingAction = null;
+                    saveKeyBindingsToLocalStorage();
+                }
+                return;
+            }
+
             // Always update keys unless in build block placing mode
             if (key in keys) keys[key] = true;
             // IJKL for player 2 (dual hero mode)
             if (key in keys2) keys2[key] = true;
+            // Sync keys based on KEY_BINDINGS for custom key support
             if (gameState === 'playing') {
+                syncKeysForBinding(key, true);
+            }
+            if (gameState === 'playing') {
+                // Track action key state for key remapping system
+                const action = getActionForKey(key, { mode: gameMode, player: 1 });
+                if (action) {
+                    _actionKeyState[action] = true;
+                }
+
                 // Dual Hero mode ghost skills
                 if (gameMode === 'dualHero') {
                     // Ghost skills (controlled by ghost player - ALWAYS player)
@@ -517,6 +829,19 @@
             const key = e.key.toLowerCase();
             if (key in keys) keys[key] = false;
             if (key in keys2) keys2[key] = false;
+
+            // Sync keys based on KEY_BINDINGS for custom key support
+            if (gameState === 'playing') {
+                syncKeysForBinding(key, false);
+            }
+
+            // Update action key state
+            if (gameState === 'playing') {
+                const action = getActionForKey(key, { mode: gameMode, player: 1 });
+                if (action) {
+                    _actionKeyState[action] = false;
+                }
+            }
         });
 
         // Active effects from thrown items
@@ -4178,6 +4503,121 @@
             ctx.font = '12px Arial';
             ctx.fillStyle = '#aaaaaa';
             ctx.fillText('双人模式：WASD vs IJKL', canvas.width/2, btn3Y + 45);
+
+            // Key settings button
+            const ksBtnW = 120, ksBtnH = 35;
+            const ksBtnX = canvas.width - ksBtnW - 30;
+            const ksBtnY = 30;
+            ctx.fillStyle = '#555555';
+            ctx.fillRect(ksBtnX, ksBtnY, ksBtnW, ksBtnH);
+            ctx.strokeStyle = '#888888';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(ksBtnX, ksBtnY, ksBtnW, ksBtnH);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '16px Arial';
+            ctx.fillText('按键设置', ksBtnX + ksBtnW/2, ksBtnY + 23);
+        }
+
+        function drawKeySettings() {
+            ctx.fillStyle = COLORS.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('按键设置', canvas.width/2, 50);
+
+            // Mode selector tabs
+            const modes = ['adventure', 'mazeEndless', 'dualHero'];
+            const modeNames = { adventure: '冒险模式', mazeEndless: '迷宫无尽', dualHero: '人鬼双雄' };
+            const tabW = 150, tabH = 35;
+            modes.forEach((mode, i) => {
+                const tx = 50 + i * (tabW + 10);
+                const ty = 80;
+                ctx.fillStyle = keySettingsState.mode === mode ? '#3498db' : '#555555';
+                ctx.fillRect(tx, ty, tabW, tabH);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '16px Arial';
+                ctx.fillText(modeNames[mode], tx + tabW/2, ty + 23);
+            });
+
+            // Player selector for dualHero
+            if (keySettingsState.mode === 'dualHero') {
+                const p1x = canvas.width/2 - 100, p2x = canvas.width/2 + 20;
+                const py = 130;
+                ctx.fillStyle = keySettingsState.player === 1 ? '#aa4444' : '#555555';
+                ctx.fillRect(p1x, py, 80, 30);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px Arial';
+                ctx.fillText('鬼', p1x + 40, py + 20);
+
+                ctx.fillStyle = keySettingsState.player === 2 ? '#4444aa' : '#555555';
+                ctx.fillRect(p2x, py, 80, 30);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText('人', p2x + 40, py + 20);
+            }
+
+            // Action list
+            const bindings = KEY_BINDINGS[keySettingsState.mode] || KEY_BINDINGS_CONFIG[keySettingsState.mode];
+            if (bindings) {
+                const actions = Object.entries(bindings).filter(([_, b]) =>
+                    b.player === keySettingsState.player || b.player === 0 ||
+                    (keySettingsState.player === 1 && b.player === 1) ||
+                    (keySettingsState.player === 2 && b.player === 2)
+                );
+
+                ctx.textAlign = 'left';
+                let y = keySettingsState.mode === 'dualHero' ? 190 : 160;
+                const colWidth = canvas.width / 2;
+
+                actions.forEach(([action, binding], idx) => {
+                    const col = idx % 2;
+                    const row = Math.floor(idx / 2);
+                    const x = 50 + col * colWidth;
+                    const yPos = y + row * 45;
+
+                    // Highlight if selected
+                    if (keySettingsState.selectingAction === action) {
+                        ctx.fillStyle = keySettingsState.waitingForKey ? '#ffff00' : '#3498db';
+                        ctx.fillRect(x - 10, yPos - 22, canvas.width / 2 - 60, 38);
+                    }
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '16px Arial';
+                    ctx.fillText(binding.description, x, yPos);
+
+                    ctx.textAlign = 'right';
+                    ctx.font = 'bold 18px Arial';
+                    const displayKey = binding.key === ' ' ? 'Space' : binding.key.toUpperCase();
+                    ctx.fillText(displayKey, x + 200, yPos);
+                    ctx.textAlign = 'left';
+                });
+            }
+
+            // Waiting for key prompt
+            if (keySettingsState.waitingForKey) {
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffff00';
+                ctx.font = 'bold 28px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('按下新按键...', canvas.width/2, canvas.height/2);
+                ctx.font = '18px Arial';
+                ctx.fillText('按 Escape 取消', canvas.width/2, canvas.height/2 + 40);
+            }
+
+            // Back button
+            ctx.fillStyle = '#555555';
+            ctx.fillRect(canvas.width/2 - 60, canvas.height - 60, 120, 40);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('返回', canvas.width/2, canvas.height - 32);
+            ctx.textAlign = 'left';
+        }
+
+        function getModeDisplayName(mode) {
+            return { adventure: '冒险模式', mazeEndless: '迷宫无尽', dualHero: '人鬼双雄' }[mode] || mode;
         }
 
         function drawMenu() {
@@ -4364,6 +4804,8 @@
                 drawMenu();
             } else if (gameState === 'modeSelect') {
                 drawModeSelect();
+            } else if (gameState === 'keySettings') {
+                drawKeySettings();
             } else if (gameState === 'playing') {
                 if (gameMode === 'dualHero') {
                     updateDualHero(dt);
@@ -4592,6 +5034,9 @@
             requestAnimationFrame(gameLoop);
         }
 
+        // Initialize key bindings from localStorage
+        loadKeyBindingsFromLocalStorage();
+
         gameLoop(0);
 
         canvas.addEventListener('click', (e) => {
@@ -4607,6 +5052,17 @@
                 const btn1Y = canvas.height/2 - 100;
                 const btn2Y = canvas.height/2 - 20;
                 const btn3Y = canvas.height/2 + 60;
+
+                // Key settings button
+                const ksBtnW = 120, ksBtnH = 35;
+                const ksBtnX = canvas.width - ksBtnW - 30;
+                const ksBtnY = 30;
+                if (mx >= ksBtnX && mx <= ksBtnX + ksBtnW && my >= ksBtnY && my <= ksBtnY + ksBtnH) {
+                    keySettingsState = { mode: 'adventure', player: 1, selectingAction: null, waitingForKey: false };
+                    gameState = 'keySettings';
+                    return;
+                }
+
                 if (mx >= btnX && mx <= btnX + btnW) {
                     if (my >= btn1Y && my <= btn1Y + btnH) {
                         startGame('adventure');
@@ -4615,6 +5071,64 @@
                     } else if (my >= btn3Y && my <= btn3Y + btnH) {
                         startGame('dualHero');
                     }
+                }
+            } else if (gameState === 'keySettings') {
+                if (keySettingsState.waitingForKey) return;
+
+                // Mode tabs
+                const modes = ['adventure', 'mazeEndless', 'dualHero'];
+                const tabW = 150, tabH = 35;
+                modes.forEach((mode, i) => {
+                    const tx = 50 + i * (tabW + 10);
+                    const ty = 80;
+                    if (mx >= tx && mx <= tx + tabW && my >= ty && my <= ty + tabH) {
+                        keySettingsState.mode = mode;
+                        keySettingsState.player = 1;
+                        keySettingsState.selectingAction = null;
+                    }
+                });
+
+                // Player tabs for dualHero
+                if (keySettingsState.mode === 'dualHero') {
+                    const p1x = canvas.width/2 - 100, p2x = canvas.width/2 + 20;
+                    const py = 130;
+                    if (mx >= p1x && mx <= p1x + 80 && my >= py && my <= py + 30) {
+                        keySettingsState.player = 1;
+                        keySettingsState.selectingAction = null;
+                    }
+                    if (mx >= p2x && mx <= p2x + 80 && my >= py && my <= py + 30) {
+                        keySettingsState.player = 2;
+                        keySettingsState.selectingAction = null;
+                    }
+                }
+
+                // Action selection
+                const bindings = KEY_BINDINGS[keySettingsState.mode] || KEY_BINDINGS_CONFIG[keySettingsState.mode];
+                if (bindings) {
+                    const actions = Object.entries(bindings).filter(([_, b]) =>
+                        b.player === keySettingsState.player || b.player === 0
+                    );
+
+                    let y = keySettingsState.mode === 'dualHero' ? 190 : 160;
+                    const colWidth = canvas.width / 2;
+
+                    actions.forEach(([action, binding], idx) => {
+                        const col = idx % 2;
+                        const row = Math.floor(idx / 2);
+                        const x = 50 + col * colWidth;
+                        const yPos = y + row * 45;
+
+                        if (mx >= x - 10 && mx <= x + 200 && my >= yPos - 22 && my <= yPos + 16) {
+                            keySettingsState.selectingAction = action;
+                            keySettingsState.waitingForKey = true;
+                        }
+                    });
+                }
+
+                // Back button
+                if (my >= canvas.height - 60 && my <= canvas.height - 20 && mx >= canvas.width/2 - 60 && mx <= canvas.width/2 + 60) {
+                    saveKeyBindingsToLocalStorage();
+                    gameState = 'modeSelect';
                 }
             } else if (gameState === 'gameover') {
                 gameState = 'menu';
